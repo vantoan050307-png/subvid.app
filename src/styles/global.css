@@ -1,0 +1,66 @@
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600&display=swap");
+
+:root {
+	--bg: #f4f4ef;
+	--bg-soft: #f9f9f6;
+	--line: #d7d7cf;
+	--line-strong: #111111;
+	--text-main: #1a1a1a;
+	--text-soft: #61615d;
+	--accent: #111111;
+	--accent-soft: #ecece7;
+	--good: #24513a;
+	--warn: #8a3324;
+	--radius: 18px;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	min-height: 100%;
+	color: var(--text-main);
+	font-family: "Outfit", "Segoe UI", sans-serif;
+}
+
+html {
+	background-color: var(--bg);
+	color-scheme: light;
+}
+
+body {
+	background:
+		radial-gradient(circle at 0% 0%, rgba(0, 0, 0, 0.035), transparent 46%),
+		repeating-linear-gradient(
+			0deg,
+			rgba(0, 0, 0, 0.018) 0,
+			rgba(0, 0, 0, 0.018) 1px,
+			transparent 1px,
+			transparent 7px
+		),
+		linear-gradient(180deg, var(--bg), #f1f1ec);
+	background-attachment: fixed;
+}
+
+h1,
+h2,
+h3 {
+	font-family: "Instrument Serif", serif;
+	letter-spacing: -0.01em;
+	margin: 0;
+}
+
+p {
+	margin: 0;
+	line-height: 1.5;
+	color: var(--text-soft);
+}
+
+button,
+input,
+select {
+	font: inherit;
+}
