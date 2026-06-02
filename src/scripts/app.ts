@@ -168,14 +168,12 @@ let segmentsByLang = {}
 let orderedLangs = []
 let activeLang = ""
 
-let ffmpeg = null
 let asrReady = false
 let translationReady = false
 /** @type {'prompt' | 'nllb' | null} */
 let activeTranslationBackend = null
 let dragDepth = 0
 let exporting = false
-let onFfmpegProgress = null
 let progressRaf = 0
 
 const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator
@@ -187,6 +185,17 @@ const transformersClient = createTransformersClient({
     if (key === "asr") asrTracker(payload)
     else if (key === "translation") translationTracker(payload)
   },
+})
+const { ensureFfmpeg, extractAudioBuffer } = createAudioService({
+  tt,
+  fetchWithProgress,
+  updateDownloadStatus,
+  setStatus,
+  setProgress,
+  applyProgress,
+  setIndeterminate,
+  startProgressCreep,
+  stopProgressCreep,
 })
 
 const currentSegments = () => segmentsByLang[activeLang] || []
@@ -347,70 +356,6 @@ function setStage(stage) {
 }
 
 // ── Lazy model loaders ──
-async function ensureFfmpeg() {
-  if (ffmpeg) return ffmpeg
-  updateDownloadStatus("ffmpeg", "downloading")
-  // The Vite-bundled worker is a module worker, so it loads the core via
-  // dynamic import() and reads `.default` (only the ESM core has one).
-  //
-  // The core JS *must* be a real URL, not a blob: an ESM module imported
-  // from a blob: URL gets `import.meta.url = blob:…` and can't resolve its
-  // assets, which breaks load(). So we import the core straight from the
-  // CDN (it's tiny, ~110 KB) and only stream the big 31 MB .wasm with a
-  // progress bar — the library's mainScriptUrlOrBlob hack makes the core
-  // fetch the wasm from the URL we provide here.
-  const coreBase = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm"
-  const coreURL = `${coreBase}/ffmpeg-core.js`
-  console.info("[ffmpeg] fetching core WASM…")
-  const wasmURL = await fetchWithProgress(
-    `${coreBase}/ffmpeg-core.wasm`,
-    "ffmpeg",
-    "application/wasm",
-    32232419,
-  )
-  console.info("[ffmpeg] core WASM ready:", wasmURL)
-
-  // classWorkerURL is the Vite-bundled ESM worker served same-origin; this
-  // avoids the default worker failing to resolve its relative imports.
-  const classWorkerURL = ffmpegWorkerURL
-  console.info("[ffmpeg] class worker url:", classWorkerURL)
-
-  ffmpeg = new FFmpeg()
-  ffmpeg.on("log", ({ type, message }) => {
-    console.info(`[ffmpeg:${type}] ${message}`)
-  })
-  ffmpeg.on("progress", ({ progress, time }) => {
-    // `time` is in microseconds; expose seconds so callers can compute a
-    // reliable ratio against the known media duration (ffmpeg's own
-    // `progress` is sparse/erratic for audio-only extraction).
-    if (typeof onFfmpegProgress === "function")
-      onFfmpegProgress(progress, (time || 0) / 1e6)
-  })
-
-  console.info("[ffmpeg] calling load()…")
-  const t0 = performance.now()
-  const watchdog = setInterval(() => {
-    console.warn(
-      `[ffmpeg] load() still pending after ${Math.round(
-        (performance.now() - t0) / 1000,
-      )}s`,
-    )
-  }, 3000)
-  try {
-    await ffmpeg.load({ classWorkerURL, coreURL, wasmURL })
-    console.info(
-      `[ffmpeg] load() resolved in ${Math.round(performance.now() - t0)}ms`,
-    )
-  } catch (err) {
-    console.error("[ffmpeg] load() failed:", err)
-    throw err
-  } finally {
-    clearInterval(watchdog)
-  }
-  updateDownloadStatus("ffmpeg", "ready")
-  return ffmpeg
-}
-
 async function ensureRecognizer() {
   if (asrReady) return
   updateDownloadStatus("asr", "downloading")
@@ -468,126 +413,6 @@ async function preloadAssetsInBackground() {
       updateDownloadStatus("asr", "error")
     }),
   ])
-}
-
-// Decode a PCM WAV (as produced by ffmpeg: pcm_s16le, mono, 16kHz) into a
-// Float32Array, reporting progress as we walk the samples and yielding to the
-// event loop so the progress bar can repaint. Returns null when the container
-// isn't plain 16-bit PCM, so the caller can fall back to decodeAudioData.
-async function decodeWavPcm16(bytes, onProgress) {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  if (view.byteLength < 44) return null
-  // 'RIFF' .... 'WAVE'
-  if (view.getUint32(0, false) !== 0x52494646) return null
-  if (view.getUint32(8, false) !== 0x57415645) return null
-
-  let offset = 12
-  let channels = 0
-  let audioFormat = 0
-  let bitsPerSample = 0
-  let dataOffset = -1
-  let dataLength = 0
-  while (offset + 8 <= view.byteLength) {
-    const id = view.getUint32(offset, false)
-    const size = view.getUint32(offset + 4, true)
-    const body = offset + 8
-    if (id === 0x666d7420 /* 'fmt ' */) {
-      audioFormat = view.getUint16(body, true)
-      channels = view.getUint16(body + 2, true)
-      bitsPerSample = view.getUint16(body + 14, true)
-    } else if (id === 0x64617461 /* 'data' */) {
-      dataOffset = body
-      dataLength = Math.min(size, view.byteLength - body)
-    }
-    // Chunks are word-aligned (padded to an even byte count).
-    offset = body + size + (size & 1)
-  }
-  if (audioFormat !== 1 || bitsPerSample !== 16 || dataOffset < 0) return null
-
-  const ch = Math.max(1, channels)
-  const stride = 2 * ch
-  const frames = Math.floor(dataLength / stride)
-  const out = new Float32Array(frames)
-  // ~6s of audio per block at 16kHz: enough blocks to animate smoothly while
-  // staying cheap enough to finish quickly.
-  const BLOCK = 96_000
-  for (let i = 0; i < frames; i += BLOCK) {
-    const end = Math.min(frames, i + BLOCK)
-    for (let f = i; f < end; f++) {
-      // Mono mix not needed — ffmpeg already gave us one channel — but read
-      // the first channel defensively in case the format differs.
-      out[f] = view.getInt16(dataOffset + f * stride, true) / 32768
-    }
-    onProgress?.(frames ? end / frames : 1)
-    // Hand control back so the browser paints the updated bar.
-    await new Promise((r) => setTimeout(r, 0))
-  }
-  return out
-}
-
-// ── Audio extraction ──
-async function extractAudioBuffer(file) {
-  const inputName = "input-video"
-  const outputName = "audio.wav"
-
-  // Loading ffmpeg, copying the file in and the actual demux are opaque steps
-  // of unknown duration. ffmpeg runs in its own web worker (so it doesn't block
-  // the UI), but it emits no usable progress for audio-only (`-vn`) extraction.
-  // An indeterminate CSS bar keeps animating on the compositor throughout, so
-  // it never looks frozen — and no misleading percentage is shown.
-  setIndeterminate(true)
-  setStatus(tt("steps.loadingFfmpeg"), "busy")
-  const worker = await ensureFfmpeg()
-  setStatus(tt("steps.readingVideo"), "busy")
-  await worker.writeFile(inputName, await fetchFile(file))
-  setStatus(tt("steps.extractingAudio"), "busy")
-  await worker.exec([
-    "-i",
-    inputName,
-    "-vn",
-    "-ac",
-    "1",
-    "-ar",
-    "16000",
-    "-f",
-    "wav",
-    outputName,
-  ])
-
-  // Back to a real, determinate bar for the parts we can measure.
-  setStatus(tt("steps.readingAudio"), "busy")
-  setProgress(32)
-  const outputData = await worker.readFile(outputName)
-  await worker.deleteFile(inputName)
-  await worker.deleteFile(outputName)
-  applyProgress(34)
-
-  const bytes =
-    outputData instanceof Uint8Array
-      ? outputData
-      : new Uint8Array(outputData as ArrayBuffer)
-
-  setStatus(tt("steps.decodingAudio"), "busy")
-  // Parse the PCM WAV ourselves so the decode advances sample-by-sample
-  // (34%→38%) instead of freezing on the opaque decodeAudioData call.
-  let copied = await decodeWavPcm16(bytes, (ratio) => {
-    applyProgress(34 + ratio * 4)
-  })
-
-  if (!copied) {
-    // Fallback for unexpected containers: let the browser decode it.
-    startProgressCreep(34, 38, 2500)
-    const audioContext = new AudioContext({ sampleRate: 16000 })
-    const decoded = await audioContext.decodeAudioData(bytes.buffer.slice(0))
-    const mono = decoded.getChannelData(0)
-    copied = new Float32Array(mono.length)
-    copied.set(mono)
-    await audioContext.close()
-    stopProgressCreep()
-  }
-
-  setProgress(38)
-  return copied
 }
 
 // ── Translation ──
