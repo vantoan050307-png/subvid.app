@@ -1,5 +1,8 @@
 ---
 import Close from "../assets/svg/close.svg"
+import { useTranslations } from "../i18n/ui"
+
+const t = useTranslations(Astro.currentLocale)
 ---
 
 <div id="export-modal" class="export-modal" hidden>
@@ -11,28 +14,26 @@ import Close from "../assets/svg/close.svg"
     aria-labelledby="export-title"
   >
     <div class="export-head">
-      <h2 id="export-title" class="export-title">Exporting video</h2>
+      <h2 id="export-title" class="export-title">{t.export.exporting}</h2>
       <button
         id="export-close"
         class="export-close"
         type="button"
-        aria-label="Close"
+        aria-label={t.export.close}
         hidden
       >
         <Close />
       </button>
     </div>
 
-    <p id="export-stage" class="export-stage">Preparing…</p>
+    <p id="export-stage" class="export-stage">{t.export.preparing}</p>
 
     <div class="export-track">
       <div id="export-fill" class="export-fill"></div>
     </div>
     <div class="export-foot">
       <span id="export-pct" class="export-pct">0%</span>
-      <span id="export-hint" class="export-hint"
-        >The video will play once to record the subtitles.</span
-      >
+      <span id="export-hint" class="export-hint">{t.export.hint}</span>
     </div>
 
     <ul id="export-steps" class="export-steps"></ul>

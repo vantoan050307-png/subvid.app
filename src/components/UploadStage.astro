@@ -1,6 +1,10 @@
 ---
 import DropzoneIcon from "../assets/svg/dropzone.svg"
+import HeroUnderline from "../assets/svg/hero-underline.svg"
 import Footer from "./Footer.astro"
+import { useTranslations } from "../i18n/ui"
+
+const t = useTranslations(Astro.currentLocale)
 ---
 
 <section id="stage-upload" class="stage-upload">
@@ -9,31 +13,17 @@ import Footer from "./Footer.astro"
   <div class="hero">
     <span class="hero-badge">
       <span class="hero-badge-dot"></span>
-      Runs 100% in your browser
+      {t.hero.badge}
     </span>
     <h1 class="hero-title">
-      <span class="hero-word">Subtitles</span>
-      <span class="hero-word">for</span>
+      <span class="hero-word">{t.hero.titleSubtitles}</span>
+      <span class="hero-word">{t.hero.titleFor}</span>
       <span class="hero-mark">
-        <svg
-          class="hero-underline"
-          viewBox="0 0 300 12"
-          preserveAspectRatio="none"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            pathLength="1"
-            d="M3 8C58 3 116 11 168 6S260 3 297 7"
-          ></path>
-        </svg>
-        <span class="hero-mark-text">any&nbsp;video</span>
+        <HeroUnderline class="hero-underline" />
+        <span class="hero-mark-text" set:html={t.hero.titleAny} />
       </span>
     </h1>
-    <p class="hero-sub">
-      Generate, edit and translate subtitles with AI. Without uploading
-      anything to any server.
-    </p>
+    <p class="hero-sub">{t.hero.sub}</p>
   </div>
 
   <div
@@ -41,7 +31,7 @@ import Footer from "./Footer.astro"
     class="dropzone"
     role="button"
     tabindex="0"
-    aria-label="Select or drop a video"
+    aria-label={t.hero.dropAria}
   >
     <input id="video-input" type="file" accept="video/*" hidden />
     <span class="dz-spotlight" aria-hidden="true"></span>
@@ -51,10 +41,8 @@ import Footer from "./Footer.astro"
         <span class="dz-pulse dz-pulse--2" aria-hidden="true"></span>
         <DropzoneIcon class="dz-icon" />
       </span>
-      <strong class="dz-label">Drop your video</strong>
-      <span class="dz-hint"
-        >or click to browse &nbsp;&middot;&nbsp; MP4, MOV, WebM, MKV</span
-      >
+      <strong class="dz-label">{t.hero.dropLabel}</strong>
+      <span class="dz-hint">{t.hero.dropHint}</span>
     </div>
   </div>
 

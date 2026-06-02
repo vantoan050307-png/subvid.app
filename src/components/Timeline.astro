@@ -5,6 +5,9 @@ import Volume from "../assets/svg/volume.svg"
 import VolumeMute from "../assets/svg/volume-mute.svg"
 import Fullscreen from "../assets/svg/fullscreen.svg"
 import FullscreenExit from "../assets/svg/fullscreen-exit.svg"
+import { useTranslations } from "../i18n/ui"
+
+const t = useTranslations(Astro.currentLocale)
 ---
 
 <div class="timeline" id="timeline">
@@ -13,7 +16,7 @@ import FullscreenExit from "../assets/svg/fullscreen-exit.svg"
       id="tl-play"
       class="tl-play"
       type="button"
-      aria-label="Play / pause"
+      aria-label={t.timeline.playPause}
     >
       <Play class="ic-play" />
       <Pause class="ic-pause" />
@@ -25,7 +28,7 @@ import FullscreenExit from "../assets/svg/fullscreen-exit.svg"
           id="vp-mute"
           class="tl-icon-btn"
           type="button"
-          aria-label="Mute / unmute"
+          aria-label={t.timeline.mute}
         >
           <Volume class="ic-vol" />
           <VolumeMute class="ic-mute" />
@@ -38,14 +41,14 @@ import FullscreenExit from "../assets/svg/fullscreen-exit.svg"
           max="1"
           step="0.05"
           value="1"
-          aria-label="Volume"
+          aria-label={t.timeline.volume}
         />
       </div>
       <button
         id="vp-fullscreen"
         class="tl-icon-btn"
         type="button"
-        aria-label="Toggle fullscreen"
+        aria-label={t.timeline.fullscreen}
       >
         <Fullscreen class="ic-fs" />
         <FullscreenExit class="ic-fs-exit" />
@@ -55,13 +58,13 @@ import FullscreenExit from "../assets/svg/fullscreen-exit.svg"
           id="tl-zoom-out"
           class="tl-zoom-btn"
           type="button"
-          aria-label="Zoom out">−</button
+          aria-label={t.timeline.zoomOut}>−</button
         >
         <button
           id="tl-zoom-in"
           class="tl-zoom-btn"
           type="button"
-          aria-label="Zoom in">+</button
+          aria-label={t.timeline.zoomIn}>+</button
         >
       </div>
     </div>

@@ -1,30 +1,15 @@
 ---
 import Layout from "../layouts/Layout.astro"
-import StatusDock from "../components/StatusDock.astro"
-import DownloadsPanel from "../components/DownloadsPanel.astro"
-import UploadStage from "../components/UploadStage.astro"
-import ConfigStage from "../components/ConfigStage.astro"
-import EditorStage from "../components/EditorStage.astro"
-import ExportModal from "../components/ExportModal.astro"
-import "../styles/app.css"
+import Home from "../components/Home.astro"
+import { useTranslations } from "../i18n/ui"
+
+// Rendered on-demand so the middleware can detect the browser language and
+// redirect to the right locale. The localized pages (e.g. /es/) stay static.
+export const prerender = false
+
+const t = useTranslations(Astro.currentLocale)
 ---
 
-<Layout
-  title="subvid.app — Subtitles for any video"
-  description="Generate and edit subtitles with AI right in your browser. No uploads, no servers."
->
-  <StatusDock />
-  <DownloadsPanel />
-
-  <main class="app" id="app">
-    <UploadStage />
-    <ConfigStage />
-    <EditorStage />
-  </main>
-
-  <ExportModal />
-
-  <script>
-    import "../scripts/app.ts"
-  </script>
+<Layout title={t.meta.title} description={t.meta.description}>
+  <Home />
 </Layout>

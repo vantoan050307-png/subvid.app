@@ -1,13 +1,16 @@
 ---
 import ChevronLeft from "../assets/svg/chevron-left.svg"
 import Footer from "./Footer.astro"
+import { useTranslations } from "../i18n/ui"
+
+const t = useTranslations(Astro.currentLocale)
 ---
 
 <section id="stage-config" class="stage-config" hidden>
   <header class="editor-top">
     <button id="config-back-btn" class="btn-ghost" type="button">
       <ChevronLeft />
-      Change video
+      {t.config.changeVideo}
     </button>
     <div id="config-meta" class="video-meta"></div>
   </header>
@@ -18,32 +21,30 @@ import Footer from "./Footer.astro"
     </div>
 
     <div class="config-form">
-      <h2 class="config-title">Configure your subtitles</h2>
-      <p class="config-sub">
-        Choose the audio language and the subtitle language.
-      </p>
+      <h2 class="config-title">{t.config.title}</h2>
+      <p class="config-sub">{t.config.sub}</p>
 
       <label class="field">
-        <span>Audio language</span>
+        <span>{t.config.audioLang}</span>
         <select id="input-lang">
-          <option value="">Detect automatically</option>
+          <option value="">{t.config.detectAuto}</option>
         </select>
       </label>
 
       <label class="field">
-        <span>Subtitle language</span>
+        <span>{t.config.subtitleLang}</span>
         <select id="output-lang">
-          <option value="same">Same as audio</option>
+          <option value="same">{t.config.sameAsAudio}</option>
         </select>
       </label>
 
       <button id="transcribe-btn" class="btn-primary btn-block" type="button">
-        Generate subtitles
+        {t.config.generate}
       </button>
 
       <div id="config-progress" class="gen-progress" hidden>
         <div class="gen-progress-head">
-          <span id="config-status" class="gen-status">Preparing…</span>
+          <span id="config-status" class="gen-status">{t.config.preparing}</span>
           <span id="config-progress-pct" class="gen-pct">0%</span>
         </div>
         <div class="gen-track">

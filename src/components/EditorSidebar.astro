@@ -1,3 +1,9 @@
+---
+import { useTranslations } from "../i18n/ui"
+
+const t = useTranslations(Astro.currentLocale)
+---
+
 <aside class="sidebar">
   <div class="sidebar-head">
     <div id="lang-tabs" class="lang-tabs"></div>
@@ -5,20 +11,20 @@
       <select
         id="lang-add-select"
         class="lang-add-select"
-        aria-label="Add subtitle language"
+        aria-label={t.sidebar.addLangAria}
         disabled
       >
-        <option value="">+ Add language</option>
+        <option value="">{t.sidebar.addLangOption}</option>
       </select>
       <span id="lang-add-status" class="lang-add-status" hidden></span>
     </div>
   </div>
   <ul id="seg-list" class="seg-list">
-    <li class="seg-empty">Generate subtitles to edit them here.</li>
+    <li class="seg-empty">{t.sidebar.segEmpty}</li>
   </ul>
   <div class="sidebar-foot">
     <button id="add-seg-btn" class="btn-ghost" type="button" disabled>
-      + Add line
+      {t.sidebar.addLine}
     </button>
     <span id="seg-count" class="seg-count"></span>
   </div>

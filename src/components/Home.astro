@@ -1,0 +1,30 @@
+---
+import StatusDock from "./StatusDock.astro"
+import DownloadsPanel from "./DownloadsPanel.astro"
+import UploadStage from "./UploadStage.astro"
+import ConfigStage from "./ConfigStage.astro"
+import EditorStage from "./EditorStage.astro"
+import ExportModal from "./ExportModal.astro"
+import { clientStrings } from "../i18n/ui"
+import "../styles/app.css"
+
+// Only the active language's runtime strings are serialized into the page, so
+// app.ts can read them from `window.__I18N__` with zero extra requests.
+const i18n = clientStrings(Astro.currentLocale)
+---
+
+<StatusDock />
+<DownloadsPanel />
+
+<main class="app" id="app">
+  <UploadStage />
+  <ConfigStage />
+  <EditorStage />
+</main>
+
+<ExportModal />
+
+<script is:inline set:html={`window.__I18N__=${JSON.stringify(i18n)}`} />
+<script>
+  import "../scripts/app.ts"
+</script>

@@ -1,24 +1,31 @@
 ---
 import "../styles/global.css"
+import { languages, defaultLang, toLang } from "../i18n/ui"
 
 interface Props {
   title?: string
   description?: string
 }
 
-const {
-  title = "subvid.app",
-  description = "Transcribe videos in-browser with Whisper + WebGPU and FFmpeg WASM.",
-} = Astro.props
+const lang = toLang(Astro.currentLocale)
+const { title = "subvid.app", description } = Astro.props
+
+const localePath = (code: string) => (code === defaultLang ? "/" : `/${code}/`)
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="description" content={description} />
+    {description && <meta name="description" content={description} />}
+    {
+      Object.keys(languages).map((code) => (
+        <link rel="alternate" hreflang={code} href={localePath(code)} />
+      ))
+    }
+    <link rel="alternate" hreflang="x-default" href={localePath(defaultLang)} />
     <title>{title}</title>
   </head>
   <body>

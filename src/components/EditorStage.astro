@@ -6,21 +6,24 @@ import Redo from "../assets/svg/redo.svg"
 import SubtitleStyleBar from "./SubtitleStyleBar.astro"
 import EditorSidebar from "./EditorSidebar.astro"
 import Timeline from "./Timeline.astro"
+import { useTranslations } from "../i18n/ui"
+
+const t = useTranslations(Astro.currentLocale)
 ---
 
 <section id="stage-editor" class="stage-editor" hidden>
   <header class="editor-top">
     <button id="back-btn" class="btn-ghost" type="button">
       <ChevronLeft />
-      Back
+      {t.editor.back}
     </button>
     <div class="editor-history">
       <button
         id="undo-btn"
         class="btn-icon"
         type="button"
-        aria-label="Undo"
-        title="Undo (Ctrl/Cmd+Z)"
+        aria-label={t.editor.undo}
+        title={t.editor.undoTitle}
         disabled
       >
         <Undo />
@@ -29,8 +32,8 @@ import Timeline from "./Timeline.astro"
         id="redo-btn"
         class="btn-icon"
         type="button"
-        aria-label="Redo"
-        title="Redo (Ctrl/Cmd+Shift+Z)"
+        aria-label={t.editor.redo}
+        title={t.editor.redoTitle}
         disabled
       >
         <Redo />
@@ -40,7 +43,7 @@ import Timeline from "./Timeline.astro"
     <div class="editor-actions">
       <button id="download-srt-btn" class="btn-soft" type="button" disabled>
         <Download />
-        Download subtitles (.srt)
+        {t.editor.downloadSrt}
       </button>
       <button
         id="download-video-btn"
@@ -49,7 +52,7 @@ import Timeline from "./Timeline.astro"
         disabled
       >
         <Download />
-        Download video
+        {t.editor.downloadVideo}
       </button>
     </div>
   </header>

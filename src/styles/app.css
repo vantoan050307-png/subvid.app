@@ -814,10 +814,28 @@ body {
 }
 .footer-repo:focus-visible,
 .footer-link:focus-visible,
-.footer-sponsor:focus-visible {
+.footer-sponsor:focus-visible,
+.footer-lang-link:focus-visible {
   outline: 2px solid #b8f060;
   outline-offset: 3px;
   border-radius: 6px;
+}
+.footer-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.footer-lang-link {
+  color: #6b7689;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 180ms ease;
+}
+.footer-lang-link:hover {
+  color: #eef1f6;
+}
+.footer-lang-link[aria-current="true"] {
+  color: #b8f060;
 }
 
 /* ── Stage: config ── */

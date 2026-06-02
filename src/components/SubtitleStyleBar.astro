@@ -1,5 +1,8 @@
 ---
 import Sliders from "../assets/svg/sliders.svg"
+import { useTranslations } from "../i18n/ui"
+
+const t = useTranslations(Astro.currentLocale)
 ---
 
 <div class="style-bar">
@@ -8,7 +11,7 @@ import Sliders from "../assets/svg/sliders.svg"
       id="style-presets"
       class="style-presets"
       role="tablist"
-      aria-label="Subtitle style presets"
+      aria-label={t.style.presetsAria}
     >
     </div>
     <button
@@ -19,59 +22,59 @@ import Sliders from "../assets/svg/sliders.svg"
       aria-controls="style-controls"
     >
       <Sliders />
-      Customize
+      {t.style.customize}
     </button>
   </div>
 
   <div id="style-controls" class="style-controls" hidden>
     <div class="sc-row">
       <label class="sc-field">
-        <span>Font</span>
+        <span>{t.style.font}</span>
         <select id="cs-font">
-          <option value="sans">Sans</option>
-          <option value="serif">Serif</option>
-          <option value="rounded">Rounded</option>
-          <option value="condensed">Condensed</option>
-          <option value="mono">Mono</option>
+          <option value="sans">{t.style.fontSans}</option>
+          <option value="serif">{t.style.fontSerif}</option>
+          <option value="rounded">{t.style.fontRounded}</option>
+          <option value="condensed">{t.style.fontCondensed}</option>
+          <option value="mono">{t.style.fontMono}</option>
         </select>
       </label>
       <label class="sc-field">
-        <span>Size</span>
+        <span>{t.style.size}</span>
         <input id="cs-size" type="range" min="0.7" max="1.6" step="0.05" />
       </label>
       <div class="sc-field">
-        <span>Position</span>
+        <span>{t.style.position}</span>
         <div id="cs-position" class="sc-seg">
-          <button type="button" data-pos="top">Top</button>
-          <button type="button" data-pos="middle">Mid</button>
-          <button type="button" data-pos="bottom">Bottom</button>
+          <button type="button" data-pos="top">{t.style.top}</button>
+          <button type="button" data-pos="middle">{t.style.mid}</button>
+          <button type="button" data-pos="bottom">{t.style.bottom}</button>
         </div>
       </div>
     </div>
 
     <div class="sc-row">
       <label class="sc-field sc-color">
-        <span>Text</span>
+        <span>{t.style.text}</span>
         <input id="cs-color" type="color" />
       </label>
       <label class="sc-toggle">
         <input id="cs-bold" type="checkbox" />
-        <span>Bold</span>
+        <span>{t.style.bold}</span>
       </label>
       <label class="sc-toggle">
         <input id="cs-outline" type="checkbox" />
-        <span>Outline</span>
+        <span>{t.style.outline}</span>
       </label>
       <label class="sc-toggle">
         <input id="cs-bg" type="checkbox" />
-        <span>Background</span>
+        <span>{t.style.background}</span>
       </label>
       <label class="sc-field sc-color">
-        <span>BG color</span>
+        <span>{t.style.bgColor}</span>
         <input id="cs-bgcolor" type="color" />
       </label>
       <label class="sc-field">
-        <span>BG opacity</span>
+        <span>{t.style.bgOpacity}</span>
         <input id="cs-bgopacity" type="range" min="0" max="1" step="0.05" />
       </label>
     </div>
