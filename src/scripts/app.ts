@@ -20,6 +20,12 @@ import { ui } from "@/scripts/ui.ts"
 
 type Segment = { start: number; end: number; text: string }
 type SegmentsByLang = Record<string, Segment[]>
+type VisibleTrack = {
+  lang: string
+  label: string
+  role: "default" | "transcription" | "subtitles"
+  segments: Segment[]
+}
 
 const {
   downloads,
@@ -44,6 +50,8 @@ let baseSegments: Segment[] = []
 let segmentsByLang: SegmentsByLang = {}
 let orderedLangs: string[] = []
 let activeLang = ""
+let dualTrackMode = false
+let dualTrackLangs: string[] = []
 let exporting = false
 
 const { setStage } = createStageManager({ ui })
@@ -59,6 +67,7 @@ const transformersClient = createTransformersClient({
 let translationService: ReturnType<typeof createTranslationService>
 let historyController: ReturnType<typeof createEditorHistory<SegmentsByLang>>
 let editorStageController: ReturnType<typeof createEditorStageController>
+let subtitleStyleController: ReturnType<typeof createSubtitleStyleController>
 
 const translateSegments = (
   segments: Segment[],
@@ -70,12 +79,52 @@ function currentSegments(): Segment[] {
   return segmentsByLang[activeLang] || []
 }
 
+function trackLabel(lang: string) {
+  if (dualTrackMode && lang === detectedLang)
+    return tt("tracks.transcription", { lang: langName(lang) })
+  if (dualTrackMode && dualTrackLangs.includes(lang))
+    return tt("tracks.subtitles", { lang: langName(lang) })
+  return langName(lang)
+}
+
+function trackRole(lang: string): VisibleTrack["role"] {
+  if (dualTrackMode && lang === detectedLang) return "transcription"
+  if (dualTrackMode && dualTrackLangs.includes(lang)) return "subtitles"
+  return "default"
+}
+
+function visibleTrackLangs() {
+  const langs =
+    dualTrackMode && dualTrackLangs.includes(activeLang)
+      ? dualTrackLangs
+      : [activeLang]
+  return langs.filter((lang, index) => lang && langs.indexOf(lang) === index)
+}
+
+function visibleTracks(): VisibleTrack[] {
+  return visibleTrackLangs()
+    .map((lang) => ({
+      lang,
+      label: trackLabel(lang),
+      role: trackRole(lang),
+      segments: segmentsByLang[lang] || [],
+    }))
+    .filter((track) => track.segments.length)
+}
+
+function currentVideoSegments(): any[] {
+  const tracks = visibleTracks()
+  return tracks.length ? tracks : currentSegments()
+}
+
 function resetEditorState() {
   detectedLang = ""
   baseSegments = []
   segmentsByLang = {}
   orderedLangs = []
   activeLang = ""
+  dualTrackMode = false
+  dualTrackLangs = []
 }
 
 function snapshotSegments() {
@@ -94,10 +143,23 @@ function enableExports(on: boolean) {
   editorStageController.enableExports(on)
 }
 
+function syncActiveCaptionStyle() {
+  subtitleStyleController?.setActiveTrack(trackRole(activeLang), activeLang)
+}
+
 let editorSegmentsController: any
 const { renderTimeline, highlightSegment, updateCaption } = createTimelineController({
   ui,
   currentSegments,
+  visibleTracks,
+  activeLang: () => activeLang,
+  setActiveLang: (lang) => {
+    activeLang = lang
+    syncActiveCaptionStyle()
+  },
+  renderTabs: () => editorSegmentsController.renderTabs(),
+  renderCaptions: (tracks, time) =>
+    subtitleStyleController?.renderCaptions(tracks, time),
   snapshotSegments,
   pushHistory,
   renderSegments: () => editorSegmentsController.renderSegments(),
@@ -113,9 +175,12 @@ editorSegmentsController = createEditorSegmentsController({
     segmentsByLang,
     orderedLangs,
     activeLang,
+    dualTrackMode,
+    dualTrackLangs,
   }),
   setActiveLang: (lang) => {
     activeLang = lang
+    syncActiveCaptionStyle()
   },
   setOrderedLangs: (langs) => {
     orderedLangs = langs
@@ -123,7 +188,7 @@ editorSegmentsController = createEditorSegmentsController({
   setSegmentsForLang: (lang, segments) => {
     segmentsByLang[lang] = segments
   },
-  currentSegments,
+  trackLabel,
   translateSegments,
   snapshotSegments,
   pushHistory,
@@ -141,12 +206,13 @@ const {
   setLangAddStatus,
   wireSegmentEditor,
 } = editorSegmentsController
+subtitleStyleController = createSubtitleStyleController({ ui, I18N })
 const {
   applyCaptionStyle,
   renderPresets,
   syncStyleControls,
   wireStyleControls,
-} = createSubtitleStyleController({ ui, I18N })
+} = subtitleStyleController
 const exportModal = createExportModal({ ui, tt, isExporting: () => exporting })
 const { closeExportModal } = exportModal
 
@@ -162,19 +228,28 @@ editorStageController = createEditorStageController({
 })
 
 historyController = createEditorHistory<SegmentsByLang>({
-  getState: () => ({ segmentsByLang, orderedLangs, activeLang }),
+  getState: () => ({
+    segmentsByLang,
+    orderedLangs,
+    activeLang,
+    dualTrackMode,
+    dualTrackLangs,
+  }),
   restoreState: (state) => {
     segmentsByLang = state.segmentsByLang || {}
     orderedLangs = state.orderedLangs || Object.keys(segmentsByLang)
     activeLang = state.activeLang || orderedLangs[0] || ""
     if (!segmentsByLang[activeLang])
       activeLang = orderedLangs[0] || Object.keys(segmentsByLang)[0] || ""
+    dualTrackMode = !!state.dualTrackMode
+    dualTrackLangs = state.dualTrackLangs || []
   },
   refreshButtons: (canUndo, canRedo) => {
     if (ui.undoBtn) ui.undoBtn.disabled = !canUndo
     if (ui.redoBtn) ui.redoBtn.disabled = !canRedo
   },
   onRestore: () => {
+    syncActiveCaptionStyle()
     renderTabs()
     renderSegments()
     enableExports(true)
@@ -198,6 +273,9 @@ const configStageController = createConfigStageController({
     segmentsByLang = state.segmentsByLang
     orderedLangs = state.orderedLangs
     activeLang = state.activeLang
+    dualTrackMode = state.dualTrackMode
+    dualTrackLangs = state.dualTrackLangs
+    syncActiveCaptionStyle()
   },
   renderTabs,
   renderSegments,
@@ -242,7 +320,7 @@ const uploadStageController = createUploadStageController({
 const { downloadVideo } = createVideoExporter({
   ui,
   tt,
-  currentSegments,
+  currentSegments: currentVideoSegments,
   selectedVideoFile: () => selectedVideoFile,
   activeLang: () => activeLang,
   baseFileName: () => baseFileName(selectedVideoFile),

@@ -2,6 +2,8 @@ type HistoryState<TSegmentsByLang> = {
   segmentsByLang: TSegmentsByLang
   orderedLangs: string[]
   activeLang: string
+  dualTrackMode?: boolean
+  dualTrackLangs?: string[]
 }
 
 type EditorHistoryOptions<TSegmentsByLang> = {

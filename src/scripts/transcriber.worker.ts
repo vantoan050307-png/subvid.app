@@ -52,7 +52,7 @@ self.onmessage = async (event: MessageEvent) => {
       const output = await recognizer(payload.audio, {
         chunk_length_s: 30,
         stride_length_s: 5,
-        return_timestamps: true,
+        return_timestamps: "word",
         language: payload.language || null,
         chunk_callback: () => post({ type: "chunk" }),
       })

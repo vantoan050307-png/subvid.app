@@ -23,7 +23,6 @@ type UploadStageOptions = {
 function isVideoFile(file: File) {
   return (
     file.type.startsWith("video/") ||
-    file.type === "" ||
     /\.(mp4|mov|webm|mkv|avi|m4v|ogv|wmv)$/i.test(file.name)
   )
 }
@@ -46,9 +45,88 @@ export function createUploadStageController({
   resetHistory,
 }: UploadStageOptions) {
   let dragDepth = 0
+  let unsupportedTimer: number | undefined
+  const dropzoneCopy = {
+    defaultLabel:
+      ui.dropzone.dataset.defaultLabel || ui.dropzoneLabel.textContent || "",
+    defaultHint:
+      ui.dropzone.dataset.defaultHint || ui.dropzoneHint.textContent || "",
+    unsupportedLabel:
+      ui.dropzone.dataset.unsupportedLabel || ui.dropzoneLabel.textContent || "",
+    unsupportedHint:
+      ui.dropzone.dataset.unsupportedHint || ui.dropzoneHint.textContent || "",
+  }
+
+  function getDraggedFileSupport(dataTransfer: DataTransfer | null) {
+    const [file] = Array.from(dataTransfer?.files || [])
+    if (file) return isVideoFile(file)
+
+    const [item] = Array.from(dataTransfer?.items || []).filter(
+      (dataTransferItem) => dataTransferItem.kind === "file",
+    )
+    if (!item) return null
+    if (item.type) return item.type.startsWith("video/")
+
+    const itemFile = item.getAsFile()
+    return itemFile ? isVideoFile(itemFile) : null
+  }
+
+  function clearUnsupportedTimer() {
+    if (!unsupportedTimer) return
+    window.clearTimeout(unsupportedTimer)
+    unsupportedTimer = undefined
+  }
+
+  function setDropzoneCopy(isUnsupported: boolean) {
+    ui.dropzoneLabel.textContent = isUnsupported
+      ? dropzoneCopy.unsupportedLabel
+      : dropzoneCopy.defaultLabel
+    ui.dropzoneHint.textContent = isUnsupported
+      ? dropzoneCopy.unsupportedHint
+      : dropzoneCopy.defaultHint
+  }
+
+  function resetDropzoneState() {
+    clearUnsupportedTimer()
+    ui.dropzone.classList.remove("over", "is-unsupported")
+    ui.app.classList.remove("is-dragging", "is-dragging-unsupported")
+    ui.dropzone.removeAttribute("aria-invalid")
+    setDropzoneCopy(false)
+  }
+
+  function showSupportedDrag() {
+    clearUnsupportedTimer()
+    ui.dropzone.classList.add("over")
+    ui.dropzone.classList.remove("is-unsupported")
+    ui.app.classList.add("is-dragging")
+    ui.app.classList.remove("is-dragging-unsupported")
+    ui.dropzone.removeAttribute("aria-invalid")
+    setDropzoneCopy(false)
+  }
+
+  function showUnsupportedFile({ dragging = false, persist = false } = {}) {
+    clearUnsupportedTimer()
+    ui.dropzone.classList.toggle("over", dragging)
+    ui.dropzone.classList.add("is-unsupported")
+    ui.app.classList.toggle("is-dragging", dragging)
+    ui.app.classList.toggle("is-dragging-unsupported", dragging)
+    ui.dropzone.setAttribute("aria-invalid", "true")
+    setDropzoneCopy(true)
+
+    if (persist) {
+      unsupportedTimer = window.setTimeout(resetDropzoneState, 2400)
+    }
+  }
 
   function handleSelectedFile(file?: File) {
-    if (!file || !isVideoFile(file)) return
+    if (!file) return
+    if (!isVideoFile(file)) {
+      showUnsupportedFile({ persist: true })
+      ui.input.value = ""
+      return
+    }
+
+    resetDropzoneState()
 
     const previousUrl = getVideoObjectUrl()
     if (previousUrl) URL.revokeObjectURL(previousUrl)
@@ -111,33 +189,36 @@ export function createUploadStageController({
   function attachGlobalDrop() {
     const hasFiles = (event: DragEvent) =>
       Array.from(event.dataTransfer?.types || []).includes("Files")
-    const setDragging = (active: boolean) => {
-      ui.dropzone.classList.toggle("over", active)
-      ui.app.classList.toggle("is-dragging", active)
-    }
 
     document.addEventListener("dragenter", (event) => {
       if (!hasFiles(event)) return
       event.preventDefault()
       dragDepth += 1
-      setDragging(true)
+      const isSupported = getDraggedFileSupport(event.dataTransfer)
+      if (isSupported === false) showUnsupportedFile({ dragging: true })
+      else showSupportedDrag()
     })
     document.addEventListener("dragover", (event) => {
       if (!hasFiles(event)) return
       event.preventDefault()
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"
+      const isSupported = getDraggedFileSupport(event.dataTransfer)
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = isSupported === false ? "none" : "copy"
+      }
+      if (isSupported === false) showUnsupportedFile({ dragging: true })
+      else showSupportedDrag()
     })
     document.addEventListener("dragleave", (event) => {
       if (!hasFiles(event)) return
       event.preventDefault()
       dragDepth = Math.max(0, dragDepth - 1)
-      if (dragDepth === 0) setDragging(false)
+      if (dragDepth === 0) resetDropzoneState()
     })
     document.addEventListener("drop", (event) => {
       if (!hasFiles(event)) return
       event.preventDefault()
       dragDepth = 0
-      setDragging(false)
+      resetDropzoneState()
       handleSelectedFile(event.dataTransfer?.files?.[0])
     })
   }

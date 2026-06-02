@@ -1,4 +1,4 @@
-import { $, $$ } from "@/scripts/dom.ts"
+import { $ } from "@/scripts/dom.ts"
 import { LANGS } from "@/scripts/languages.ts"
 import { formatClock, parseClock } from "@/scripts/subtitles.ts"
 
@@ -8,6 +8,8 @@ type EditorState = {
   segmentsByLang: Record<string, any[]>
   orderedLangs: string[]
   activeLang: string
+  dualTrackMode: boolean
+  dualTrackLangs: string[]
 }
 
 type EditorSegmentsOptions = {
@@ -18,7 +20,7 @@ type EditorSegmentsOptions = {
   setActiveLang: (lang: string) => void
   setOrderedLangs: (langs: string[]) => void
   setSegmentsForLang: (lang: string, segments: any[]) => void
-  currentSegments: () => any[]
+  trackLabel: (lang: string) => string
   translateSegments: (segments: any[], source: string, target: string) => Promise<any[]>
   snapshotSegments: () => string
   pushHistory: (snapshotBefore: string) => void
@@ -37,7 +39,7 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
     setActiveLang,
     setOrderedLangs,
     setSegmentsForLang,
-    currentSegments,
+    trackLabel,
     translateSegments,
     snapshotSegments,
     pushHistory,
@@ -49,6 +51,41 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
 
   let translatingLang = ""
   let textEditSnapshot: string | null = null
+
+  function escapeHtml(value: string) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+  }
+
+  function visibleEditorLangs() {
+    const state = getState()
+    const langs =
+      state.dualTrackMode && state.dualTrackLangs.includes(state.activeLang)
+        ? state.dualTrackLangs
+        : [state.activeLang]
+    return langs.filter((lang, index) => lang && langs.indexOf(lang) === index)
+  }
+
+  function segmentsForLang(lang: string) {
+    return getState().segmentsByLang[lang] || []
+  }
+
+  function setActiveLangFromElement(li: HTMLElement) {
+    const lang = li.dataset.lang
+    if (!lang || getState().activeLang === lang) return
+    setActiveLang(lang)
+    renderTabs()
+  }
+
+  function segmentFromElement(li: HTMLElement) {
+    const lang = li.dataset.lang || getState().activeLang
+    const index = Number(li.dataset.index)
+    const segments = segmentsForLang(lang)
+    return { lang, index, segments, seg: segments[index] }
+  }
 
   function buildLangSelects() {
     ui.inputLang.innerHTML = `<option value="">${tt("detectAuto")}</option>`
@@ -148,19 +185,35 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
   }
 
   function renderSegments() {
-    const segments = currentSegments()
+    const state = getState()
+    const langs = visibleEditorLangs()
+    const isDual = state.dualTrackMode && langs.length > 1
     ui.segList.innerHTML = ""
-    if (!segments.length) {
+    ui.segList.classList.toggle("is-dual", isDual)
+    const totalSegments = langs.reduce(
+      (count, lang) => count + segmentsForLang(lang).length,
+      0,
+    )
+    if (!totalSegments) {
       ui.segList.innerHTML = `<li class="seg-empty">${tt("segEmpty")}</li>`
       ui.segCount.textContent = ""
       renderTimeline()
       return
     }
-    segments.forEach((seg, index) => {
-      const li = document.createElement("li")
-      li.className = "seg"
-      li.dataset.index = String(index)
-      li.innerHTML = `
+    langs.forEach((lang) => {
+      const segments = segmentsForLang(lang)
+      if (isDual) {
+        const title = document.createElement("li")
+        title.className = "seg-track-title"
+        title.textContent = trackLabel(lang)
+        ui.segList.appendChild(title)
+      }
+      segments.forEach((seg, index) => {
+        const li = document.createElement("li")
+        li.className = "seg"
+        li.dataset.lang = lang
+        li.dataset.index = String(index)
+        li.innerHTML = `
       <div class="seg-row">
         <button class="seg-play" type="button" title="${tt("goTitle")}" aria-label="${tt("goAria")}">
           <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M3 2l5 3.5L3 9V2z" fill="currentColor"/></svg>
@@ -170,11 +223,14 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
         <input class="t-input t-end" value="${formatClock(seg.end)}" aria-label="${tt("endAria")}" />
         <button class="seg-del" type="button" title="${tt("delTitle")}" aria-label="${tt("delAria")}">✕</button>
       </div>
-      <textarea class="seg-text" rows="2" spellcheck="false">${seg.text.replace(/</g, "&lt;")}</textarea>
+      <textarea class="seg-text" rows="2" spellcheck="false">${escapeHtml(seg.text)}</textarea>
     `
-      ui.segList.appendChild(li)
+        ui.segList.appendChild(li)
+      })
     })
-    ui.segCount.textContent = tt("segCount", { n: segments.length })
+    ui.segCount.textContent = isDual
+      ? tt("tracks.count", { n: totalSegments, count: langs.length })
+      : tt("segCount", { n: totalSegments })
     renderTimeline()
   }
 
@@ -182,8 +238,7 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
     ui.segList.addEventListener("input", (event: any) => {
       const li = event.target.closest(".seg")
       if (!li) return
-      const index = Number(li.dataset.index)
-      const seg = currentSegments()[index]
+      const { seg } = segmentFromElement(li)
       if (!seg) return
       if (event.target.classList.contains("seg-text")) {
         seg.text = event.target.value
@@ -194,8 +249,7 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
     ui.segList.addEventListener("change", (event: any) => {
       const li = event.target.closest(".seg")
       if (!li) return
-      const index = Number(li.dataset.index)
-      const seg = currentSegments()[index]
+      const { segments, seg } = segmentFromElement(li)
       if (!seg) return
       if (
         event.target.classList.contains("t-start") ||
@@ -212,7 +266,7 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
         if (event.target.classList.contains("t-start")) seg.start = parsed
         else seg.end = parsed
         if (seg.end <= seg.start) seg.end = seg.start + 0.5
-        currentSegments().sort((a, b) => a.start - b.start)
+        segments.sort((a, b) => a.start - b.start)
         pushHistory(before)
         renderSegments()
         updateCaption()
@@ -222,22 +276,22 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
     ui.segList.addEventListener("click", (event: any) => {
       const li = event.target.closest(".seg")
       if (!li) return
-      const index = Number(li.dataset.index)
-      const seg = currentSegments()[index]
+      setActiveLangFromElement(li)
+      const { lang, index, segments, seg } = segmentFromElement(li)
       if (!seg) return
       if (event.target.closest(".seg-play")) {
         ui.video.currentTime = seg.start
         ui.video.play().catch(() => {})
       } else if (event.target.closest(".seg-del")) {
         const before = snapshotSegments()
-        currentSegments().splice(index, 1)
+        segments.splice(index, 1)
         pushHistory(before)
         renderSegments()
         enableExports(true)
         updateCaption()
         return
       }
-      highlightSegment(index, { scrollTimeline: true })
+      highlightSegment(index, { lang, scrollTimeline: true })
     })
 
     ui.segList.addEventListener("focusin", (event: any) => {
@@ -248,13 +302,14 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
         event.target.classList.contains("t-input")
       if (!isEditable) return
       const index = Number(li.dataset.index)
-      const seg = currentSegments()[index]
+      const { lang, seg } = segmentFromElement(li)
       if (!seg) return
+      setActiveLangFromElement(li)
       if (event.target.classList.contains("seg-text"))
         textEditSnapshot = snapshotSegments()
       if (Math.abs(ui.video.currentTime - seg.start) > 0.05)
         ui.video.currentTime = seg.start
-      highlightSegment(index, { scrollTimeline: true })
+      highlightSegment(index, { lang, scrollTimeline: true })
     })
 
     ui.segList.addEventListener("focusout", (event: any) => {
@@ -266,7 +321,8 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
 
     ui.addSegBtn.addEventListener("click", () => {
       const before = snapshotSegments()
-      const segments = currentSegments()
+      const lang = getState().activeLang
+      const segments = segmentsForLang(lang)
       const t = ui.video.currentTime || 0
       segments.push({ start: t, end: t + 2, text: "" })
       segments.sort((a, b) => a.start - b.start)
@@ -274,7 +330,7 @@ export function createEditorSegmentsController(options: EditorSegmentsOptions) {
       renderSegments()
       enableExports(true)
       const created = $(
-        `.seg[data-index="${segments.findIndex((s) => s.start === t)}"] .seg-text`,
+        `.seg[data-lang="${lang}"][data-index="${segments.findIndex((s) => s.start === t)}"] .seg-text`,
         ui.segList,
       )
       created?.focus()

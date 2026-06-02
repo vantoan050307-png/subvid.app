@@ -17,6 +17,8 @@ type GeneratedState = {
   segmentsByLang: SegmentsByLang
   orderedLangs: string[]
   activeLang: string
+  dualTrackMode: boolean
+  dualTrackLangs: string[]
 }
 
 type ConfigStageOptions = {
@@ -131,6 +133,18 @@ export function createConfigStageController({
     const value = ui.outputLang.value
     if (!value || value === "same") return sourceLang
     return value in LANGS ? value : sourceLang
+  }
+
+  function canEnableDualTrackOption() {
+    const target = ui.outputLang.value
+    return !ui.inputLang.value && !!target && target !== "same"
+  }
+
+  function syncDualTrackOption() {
+    const available = canEnableDualTrackOption()
+    ui.dualTrackField.hidden = !available
+    ui.dualTrack.disabled = !available
+    if (!available) ui.dualTrack.checked = false
   }
 
   async function ensureRecognizer() {
@@ -255,6 +269,11 @@ export function createConfigStageController({
       const targets = [detectedLang]
       if (target !== detectedLang && !targets.includes(target))
         targets.push(target)
+      const dualTrackMode =
+        ui.dualTrack.checked &&
+        !ui.inputLang.value &&
+        target !== detectedLang &&
+        targets.includes(target)
 
       const TX_START = 92
       const TX_SPAN = 100 - TX_START
@@ -287,6 +306,8 @@ export function createConfigStageController({
         segmentsByLang,
         orderedLangs: targets,
         activeLang: target,
+        dualTrackMode,
+        dualTrackLangs: dualTrackMode ? [detectedLang, target] : [],
       })
       renderTabs()
       renderSegments()
@@ -316,6 +337,9 @@ export function createConfigStageController({
 
   function wireConfigStage() {
     ui.transcribeBtn.addEventListener("click", generate)
+    ui.inputLang.addEventListener("change", syncDualTrackOption)
+    ui.outputLang.addEventListener("change", syncDualTrackOption)
+    syncDualTrackOption()
   }
 
   return {

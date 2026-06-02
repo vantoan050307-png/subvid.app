@@ -1,9 +1,29 @@
 import { $, $$ } from "@/scripts/dom.ts"
 import { formatClock } from "@/scripts/subtitles.ts"
 
+type TimelineTrack = {
+  lang: string
+  label: string
+  role?: string
+  segments: any[]
+}
+
+type CaptionTrack = {
+  lang: string
+  label: string
+  role?: string
+  text: string
+  segment?: any
+}
+
 type TimelineOptions = {
   ui: any
   currentSegments: () => any[]
+  visibleTracks?: () => TimelineTrack[]
+  activeLang?: () => string
+  setActiveLang?: (lang: string) => void
+  renderTabs?: () => void
+  renderCaptions?: (tracks: CaptionTrack[], time: number) => void
   snapshotSegments: () => string
   pushHistory: (snapshotBefore: string) => void
   renderSegments: () => void
@@ -11,9 +31,23 @@ type TimelineOptions = {
 }
 
 export function createTimelineController(options: TimelineOptions) {
-  const { ui, currentSegments, snapshotSegments, pushHistory, renderSegments, enableExports } =
-    options
+  const {
+    ui,
+    currentSegments,
+    visibleTracks,
+    activeLang,
+    setActiveLang,
+    renderTabs,
+    renderCaptions,
+    snapshotSegments,
+    pushHistory,
+    renderSegments,
+    enableExports,
+  } = options
   const TL_MIN_DUR = 0.3
+  const TL_HEADER_H = 34
+  const TL_ROW_H = 58
+  const TL_SCROLL_PAD = 22
   let tlPxPerSec = 90
   let tlDuration = 0
   let tlDrag: any = null
@@ -24,17 +58,58 @@ export function createTimelineController(options: TimelineOptions) {
   let phAnchorMedia = 0
   let phAnchorWall = 0
 
+  function escapeHtml(value: string) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+  }
+
+  function getTracks() {
+    const tracks = visibleTracks?.().filter((track) => track.segments.length) || []
+    if (tracks.length) return tracks
+    return [
+      {
+        lang: activeLang?.() || "",
+        label: "",
+        segments: currentSegments(),
+      },
+    ]
+  }
+
+  function segmentsForLang(lang: string) {
+    return getTracks().find((track) => track.lang === lang)?.segments || currentSegments()
+  }
+
+  function activeTrackLang() {
+    return activeLang?.() || getTracks()[0]?.lang || ""
+  }
+
+  function activateTrack(lang: string) {
+    if (!lang || activeTrackLang() === lang) return
+    setActiveLang?.(lang)
+    renderTabs?.()
+  }
+
   function tlTotalDuration() {
-    const segs = currentSegments()
-    const segEnd = segs.length ? segs[segs.length - 1].end : 0
+    const segEnd = getTracks().reduce((max, track) => {
+      const last = track.segments[track.segments.length - 1]
+      return Math.max(max, last?.end || 0)
+    }, 0)
     return Math.max(tlDuration, segEnd, 1)
   }
 
   function renderTimeline() {
     if (!ui.timelineBlocks) return
-    const segments = currentSegments()
+    const tracks = getTracks()
     const dur = tlTotalDuration()
     ui.timelineTrack.style.width = `${dur * tlPxPerSec}px`
+    ui.timeline?.classList.toggle("is-multitrack", tracks.length > 1)
+    const blocksHeight = tracks.length * TL_ROW_H
+    ui.timelineBlocks.style.height = `${blocksHeight}px`
+    ui.timelineTrack.style.height = `${TL_HEADER_H + blocksHeight}px`
+    ui.timelineScroll.style.height = `${TL_HEADER_H + blocksHeight + TL_SCROLL_PAD}px`
 
     let step = 1
     if (tlPxPerSec < 24) step = 15
@@ -50,18 +125,32 @@ export function createTimelineController(options: TimelineOptions) {
     ui.timelineRuler.innerHTML = ruler
 
     ui.timelineBlocks.innerHTML = ""
-    segments.forEach((seg, index) => {
-      const block = document.createElement("div")
-      block.className = "tl-block"
-      block.dataset.index = String(index)
-      block.style.left = `${seg.start * tlPxPerSec}px`
-      block.style.width = `${Math.max(TL_MIN_DUR, seg.end - seg.start) * tlPxPerSec}px`
-      block.innerHTML = `
+    tracks.forEach((track, trackIndex) => {
+      const row = document.createElement("div")
+      row.className = "tl-track-row"
+      row.dataset.lang = track.lang
+      row.style.top = `${trackIndex * TL_ROW_H}px`
+      if (track.label) {
+        const label = document.createElement("span")
+        label.className = "tl-track-label"
+        label.textContent = track.label
+        row.appendChild(label)
+      }
+      track.segments.forEach((seg, index) => {
+        const block = document.createElement("div")
+        block.className = "tl-block"
+        block.dataset.lang = track.lang
+        block.dataset.index = String(index)
+        block.style.left = `${seg.start * tlPxPerSec}px`
+        block.style.width = `${Math.max(TL_MIN_DUR, seg.end - seg.start) * tlPxPerSec}px`
+        block.innerHTML = `
       <span class="tl-handle tl-handle-l" data-edge="start"></span>
-      <span class="tl-block-label">${(seg.text || "—").replace(/</g, "&lt;")}</span>
+      <span class="tl-block-label">${escapeHtml(seg.text || "—")}</span>
       <span class="tl-handle tl-handle-r" data-edge="end"></span>
     `
-      ui.timelineBlocks.appendChild(block)
+        row.appendChild(block)
+      })
+      ui.timelineBlocks.appendChild(row)
     })
     updateTimelinePlayhead()
   }
@@ -84,15 +173,16 @@ export function createTimelineController(options: TimelineOptions) {
     }
   }
 
-  function setTimelineActive(idx: number) {
+  function setTimelineActive(idx: number, lang = activeTrackLang()) {
     if (!ui.timelineBlocks) return
     $$(".tl-block.is-active", ui.timelineBlocks).forEach((el) =>
       el.classList.remove("is-active"),
     )
     if (idx >= 0) {
-      $(`.tl-block[data-index="${idx}"]`, ui.timelineBlocks)?.classList.add(
-        "is-active",
-      )
+      $(
+        `.tl-block[data-lang="${lang}"][data-index="${idx}"]`,
+        ui.timelineBlocks,
+      )?.classList.add("is-active")
     }
   }
 
@@ -125,17 +215,22 @@ export function createTimelineController(options: TimelineOptions) {
 
   function endTimelineDrag() {
     if (!tlDrag) return
-    const { block, moved, seg, index, before } = tlDrag
+    const { block, moved, seg, index, lang, before } = tlDrag
     block.classList.remove("is-dragging")
     tlDrag = null
     if (moved) pushHistory(before)
-    currentSegments().sort((a, b) => a.start - b.start)
+    const segments = segmentsForLang(lang)
+    segments.sort((a, b) => a.start - b.start)
     renderSegments()
     enableExports(true)
     if (!moved) {
+      activateTrack(lang)
       ui.video.currentTime = seg.start
-      const newIndex = currentSegments().indexOf(seg)
-      highlightSegment(newIndex >= 0 ? newIndex : index, { scrollSidebar: true })
+      const newIndex = segments.indexOf(seg)
+      highlightSegment(newIndex >= 0 ? newIndex : index, {
+        lang,
+        scrollSidebar: true,
+      })
     }
     updateCaption()
   }
@@ -159,7 +254,7 @@ export function createTimelineController(options: TimelineOptions) {
       reanchorPlayhead()
       predicted = real
     }
-    updateTimelinePlayhead(Math.min(predicted, tlTotalDuration()))
+    updateCaption(Math.min(predicted, tlTotalDuration()))
     playheadRaf = requestAnimationFrame(playheadLoop)
   }
 
@@ -180,9 +275,9 @@ export function createTimelineController(options: TimelineOptions) {
     ui.timeline?.classList.toggle("is-fullscreen", isFullscreen())
   }
 
-  function scrollTimelineToBlock(index: number) {
+  function scrollTimelineToBlock(index: number, lang = activeTrackLang()) {
     const view = ui.timelineScroll
-    const seg = currentSegments()[index]
+    const seg = segmentsForLang(lang)[index]
     if (!view || !seg) return
     const left = seg.start * tlPxPerSec
     const right = Math.max(left + TL_MIN_DUR * tlPxPerSec, seg.end * tlPxPerSec)
@@ -196,39 +291,69 @@ export function createTimelineController(options: TimelineOptions) {
 
   function highlightSegment(
     index: number,
-    { scrollSidebar = false, scrollTimeline = false, touchSidebar = true } = {},
+    {
+      lang = activeTrackLang(),
+      scrollSidebar = false,
+      scrollTimeline = false,
+      touchSidebar = true,
+    } = {},
   ) {
-    setTimelineActive(index)
+    setTimelineActive(index, lang)
     if (touchSidebar) {
       $$(".seg.is-active", ui.segList).forEach((el) =>
         el.classList.remove("is-active"),
       )
       if (index >= 0) {
-        const li = $(`.seg[data-index="${index}"]`, ui.segList)
+        const li = $(`.seg[data-lang="${lang}"][data-index="${index}"]`, ui.segList)
         if (li) {
           li.classList.add("is-active")
           if (scrollSidebar) li.scrollIntoView({ block: "nearest" })
         }
       }
     }
-    if (scrollTimeline && index >= 0) scrollTimelineToBlock(index)
+    if (scrollTimeline && index >= 0) scrollTimelineToBlock(index, lang)
   }
 
-  function updateCaption() {
-    updateTimelinePlayhead()
-    const segments = currentSegments()
+  function updateCaption(timeOverride?: number) {
+    const frameOnly = typeof timeOverride === "number"
+    const current =
+      frameOnly ? timeOverride : ui.video.currentTime
+    updateTimelinePlayhead(current)
+    const tracks = getTracks()
     const editing = document.activeElement?.tagName === "TEXTAREA"
-    if (!segments.length || !ui.video.duration) {
-      ui.caption.textContent = ""
-      highlightSegment(-1, { touchSidebar: !editing })
+    if (!tracks.length || !ui.video.duration) {
+      renderCaptions?.([], current)
+      if (!frameOnly) highlightSegment(-1, { touchSidebar: !editing })
       return
     }
-    const current = ui.video.currentTime
-    const idx = segments.findIndex(
+    const activeLang = activeTrackLang()
+    const captionTracks = tracks
+      .map((track) => {
+        const segment = track.segments.find(
+          (s) => current >= s.start && current <= s.end,
+        )
+        return {
+          lang: track.lang,
+          label: track.label,
+          role: track.role,
+          text: segment?.text || "",
+          segment,
+        }
+      })
+      .filter((track) => track.text.trim())
+    const activeTrack =
+      tracks.find((track) => track.lang === activeLang) || tracks[0]
+    const idx = activeTrack.segments.findIndex(
       (s) => current >= s.start && current <= s.end,
     )
-    ui.caption.textContent = idx >= 0 ? segments[idx].text : ""
-    highlightSegment(idx, { touchSidebar: !editing, scrollSidebar: !editing })
+    renderCaptions?.(captionTracks, current)
+    if (!frameOnly) {
+      highlightSegment(idx, {
+        lang: activeTrack.lang,
+        touchSidebar: !editing,
+        scrollSidebar: !editing,
+      })
+    }
   }
 
   function wireTimeline() {
@@ -251,11 +376,14 @@ export function createTimelineController(options: TimelineOptions) {
       if (!block) return
       const handle = event.target.closest(".tl-handle")
       const index = Number(block.dataset.index)
-      const seg = currentSegments()[index]
+      const lang = block.dataset.lang || activeTrackLang()
+      const seg = segmentsForLang(lang)[index]
       if (!seg) return
       event.preventDefault()
+      activateTrack(lang)
       tlDrag = {
         index,
+        lang,
         seg,
         block,
         mode: handle ? handle.dataset.edge : "move",
@@ -290,7 +418,10 @@ export function createTimelineController(options: TimelineOptions) {
       }
       tlDrag.block.style.left = `${seg.start * tlPxPerSec}px`
       tlDrag.block.style.width = `${(seg.end - seg.start) * tlPxPerSec}px`
-      const li = $(`.seg[data-index="${tlDrag.index}"]`, ui.segList)
+      const li = $(
+        `.seg[data-lang="${tlDrag.lang}"][data-index="${tlDrag.index}"]`,
+        ui.segList,
+      )
       if (li) {
         const s = $<HTMLInputElement>(".t-start", li)
         const e = $<HTMLInputElement>(".t-end", li)

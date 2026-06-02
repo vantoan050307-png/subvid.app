@@ -1,4 +1,5 @@
 import { $$ } from "@/scripts/dom.ts"
+import { estimatedWordsForSegment } from "@/scripts/subtitles.ts"
 
 export const FONT_STACKS: Record<string, string> = {
   sans: '"Outfit", "Segoe UI", system-ui, sans-serif',
@@ -17,6 +18,8 @@ export const CAPTION_PRESETS = [
       size: 1,
       color: "#ffffff",
       weight: 600,
+      italic: false,
+      align: "center",
       bgEnabled: true,
       bgColor: "#06080b",
       bgOpacity: 0.84,
@@ -31,6 +34,8 @@ export const CAPTION_PRESETS = [
       size: 1,
       color: "#ffffff",
       weight: 600,
+      italic: false,
+      align: "center",
       bgEnabled: false,
       bgColor: "#06080b",
       bgOpacity: 0.84,
@@ -45,6 +50,8 @@ export const CAPTION_PRESETS = [
       size: 1.12,
       color: "#ffffff",
       weight: 700,
+      italic: false,
+      align: "center",
       bgEnabled: true,
       bgColor: "#000000",
       bgOpacity: 1,
@@ -59,6 +66,8 @@ export const CAPTION_PRESETS = [
       size: 1.06,
       color: "#fde047",
       weight: 700,
+      italic: false,
+      align: "center",
       bgEnabled: false,
       bgColor: "#000000",
       bgOpacity: 0.84,
@@ -73,6 +82,8 @@ export const CAPTION_PRESETS = [
       size: 1,
       color: "#b8f060",
       weight: 700,
+      italic: false,
+      align: "center",
       bgEnabled: true,
       bgColor: "#06080b",
       bgOpacity: 0.55,
@@ -87,6 +98,8 @@ export const CAPTION_PRESETS = [
       size: 1,
       color: "#ffffff",
       weight: 600,
+      italic: false,
+      align: "center",
       bgEnabled: false,
       bgColor: "#06080b",
       bgOpacity: 0.84,
@@ -101,6 +114,8 @@ export const CAPTION_PRESETS = [
       size: 0.92,
       color: "#ffffff",
       weight: 600,
+      italic: false,
+      align: "center",
       bgEnabled: true,
       bgColor: "#0a0d12",
       bgOpacity: 0.9,
@@ -114,11 +129,81 @@ export const captionStyle: any = {
   size: 1,
   color: "#ffffff",
   weight: 600,
+  italic: false,
+  align: "center",
   bgEnabled: true,
   bgColor: "#06080b",
   bgOpacity: 0.84,
   outline: false,
+  wordHighlight: false,
   position: "bottom",
+  customX: 50,
+  customY: 88,
+}
+
+export const transcriptionCaptionStyle: any = {
+  font: "sans",
+  size: 0.86,
+  color: "#dbeafe",
+  weight: 500,
+  italic: true,
+  align: "center",
+  bgEnabled: true,
+  bgColor: "#06080b",
+  bgOpacity: 0.5,
+  outline: false,
+  wordHighlight: false,
+  position: "top",
+  customX: 50,
+  customY: 12,
+}
+
+const captionStylesByTrack = new Map<string, any>()
+
+function cloneStyle(style: any) {
+  return { ...style }
+}
+
+function baseStyleForRole(role = "default") {
+  return role === "transcription" ? transcriptionCaptionStyle : captionStyle
+}
+
+function trackStyleKey(role = "default", lang = "") {
+  return `${role || "default"}:${lang || "__default"}`
+}
+
+export function captionStyleForTrack(role = "default", lang = "") {
+  if (!lang) return baseStyleForRole(role)
+  const key = trackStyleKey(role, lang)
+  if (!captionStylesByTrack.has(key)) {
+    captionStylesByTrack.set(key, cloneStyle(baseStyleForRole(role)))
+  }
+  return captionStylesByTrack.get(key)
+}
+
+export function captionStyleForRole(role = "default", lang = "") {
+  return captionStyleForTrack(role, lang)
+}
+
+const POSITION_POINTS: Record<string, { x: number; y: number }> = {
+  top: { x: 50, y: 8 },
+  middle: { x: 50, y: 50 },
+  bottom: { x: 50, y: 92 },
+}
+
+const CUSTOM_GUIDES = {
+  x: 50,
+  top: 12,
+  middle: 50,
+  bottom: 88,
+}
+const SNAP_DISTANCE = 4
+const CAPTION_SIZE_MIN = 0.7
+const CAPTION_SIZE_MAX = 1.6
+const CAPTION_RESIZE_HIT_SIZE = 22
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
 }
 
 export function hexToRgba(hex: string, alpha = 1) {
@@ -139,6 +224,8 @@ export function hexToRgba(hex: string, alpha = 1) {
 export function applyVisualStyle(el: HTMLElement, s: any) {
   el.style.fontFamily = FONT_STACKS[s.font] || FONT_STACKS.sans
   el.style.fontWeight = String(s.weight || 600)
+  el.style.fontStyle = s.italic ? "italic" : "normal"
+  el.style.textAlign = s.align || "center"
   el.style.color = s.color || "#ffffff"
   el.style.background = s.bgEnabled
     ? hexToRgba(s.bgColor, s.bgOpacity)
@@ -148,29 +235,454 @@ export function applyVisualStyle(el: HTMLElement, s: any) {
     : s.bgEnabled
       ? "none"
       : "0 1px 3px rgba(0,0,0,.85)"
+  el.style.setProperty("--caption-word-color", s.color || "#ffffff")
 }
 
 export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any }) {
   let activePresetId = "default"
+  let activeCaptionRole = "default"
+  let activeCaptionLang = ""
+  const presetIdsByTrack = new Map<string, string>()
+  let dragState: {
+    el: HTMLElement
+    role: string
+    pointerId: number
+    offsetX: number
+    offsetY: number
+    startClientX: number
+    startClientY: number
+    started: boolean
+  } | null = null
+  let resizeState: {
+    el: HTMLElement
+    pointerId: number
+    startClientX: number
+    startClientY: number
+    startSize: number
+    started: boolean
+  } | null = null
+
+  function captionBoxes() {
+    return $$<HTMLElement>(".caption-box", ui.caption)
+  }
+
+  function activeStyle() {
+    return captionStyleForTrack(activeCaptionRole, activeCaptionLang)
+  }
+
+  function boxStyle(el: HTMLElement) {
+    return captionStyleForTrack(el.dataset.role || "default", el.dataset.lang || "")
+  }
+
+  function setActiveCaptionTrack(role = "default", lang = "") {
+    activeCaptionRole = role || "default"
+    activeCaptionLang = lang || ""
+    activePresetId = presetIdsByTrack.get(trackStyleKey(activeCaptionRole, activeCaptionLang)) ?? "default"
+  }
+
+  function setActiveCaptionFromBox(box: HTMLElement) {
+    setActiveCaptionTrack(box.dataset.role || "default", box.dataset.lang || "")
+  }
+
+  function setActivePresetId(id: string) {
+    activePresetId = id
+    presetIdsByTrack.set(trackStyleKey(activeCaptionRole, activeCaptionLang), id)
+  }
 
   function applyCaptionStyle() {
-    const c = captionStyle
-    applyVisualStyle(ui.caption, c)
-    ui.caption.style.fontSize = `clamp(${Math.round(13 * c.size)}px, ${(
+    captionBoxes().forEach((box) => applyCaptionBoxStyle(box))
+  }
+
+  function renderCaptionText(box: HTMLElement, track: any, time: number) {
+    const style = boxStyle(box)
+    box.classList.toggle("is-word-highlight", !!style.wordHighlight)
+    if (!style.wordHighlight || !track.segment) {
+      box.textContent = track.text
+      return
+    }
+
+    const words = estimatedWordsForSegment(track.segment)
+    if (!words.length) {
+      box.textContent = track.text
+      return
+    }
+
+    box.replaceChildren()
+    words.forEach((word, index) => {
+      if (index > 0) box.append(document.createTextNode(" "))
+      const span = document.createElement("span")
+      span.className = "caption-word"
+      span.classList.toggle("is-spoken", time >= word.start)
+      span.textContent = word.text
+      box.append(span)
+    })
+  }
+
+  function applyCaptionBoxStyle(box: HTMLElement) {
+    const c = boxStyle(box)
+    applyVisualStyle(box, c)
+    box.style.fontSize = `clamp(${Math.round(13 * c.size)}px, ${(
       2.4 * c.size
     ).toFixed(2)}vw, ${Math.round(28 * c.size)}px)`
-    ui.caption.style.padding = c.bgEnabled ? "0.22rem 0.6rem" : "0"
-    ui.caption.style.top = "auto"
-    ui.caption.style.bottom = "auto"
-    if (c.position === "middle") {
-      ui.caption.style.top = "50%"
-      ui.caption.style.transform = "translate(-50%, -50%)"
-    } else if (c.position === "top") {
-      ui.caption.style.top = "8%"
-      ui.caption.style.transform = "translateX(-50%)"
+    box.style.padding = c.bgEnabled ? "0.22rem 0.6rem" : "0"
+    box.style.left = "50%"
+    box.style.top = "auto"
+    box.style.bottom = "auto"
+    if (c.position === "custom") {
+      box.style.left = `${clamp(Number(c.customX) || 50, 0, 100)}%`
+      box.style.top = `${clamp(Number(c.customY) || 50, 0, 100)}%`
+      box.style.transform = "translate(-50%, -50%)"
     } else {
-      ui.caption.style.bottom = "8%"
-      ui.caption.style.transform = "translateX(-50%)"
+      const point = POSITION_POINTS[c.position] || POSITION_POINTS.bottom
+      box.style.left = `${point.x}%`
+      box.style.top = `${point.y}%`
+      box.style.transform =
+        c.position === "top"
+          ? "translate(-50%, 0)"
+          : c.position === "bottom"
+            ? "translate(-50%, -100%)"
+            : "translate(-50%, -50%)"
+    }
+  }
+
+  function captionCenterPercent(el: HTMLElement) {
+    const previewRect = ui.videoPreview.getBoundingClientRect()
+    const captionRect = el.getBoundingClientRect()
+    if (!previewRect.width || !previewRect.height) {
+      const style = boxStyle(el)
+      return { x: Number(style.customX) || 50, y: Number(style.customY) || 88 }
+    }
+    return {
+      x:
+        ((captionRect.left + captionRect.width / 2 - previewRect.left) /
+          previewRect.width) *
+        100,
+      y:
+        ((captionRect.top + captionRect.height / 2 - previewRect.top) /
+          previewRect.height) *
+        100,
+    }
+  }
+
+  function clampCaptionPoint(el: HTMLElement, x: number, y: number) {
+    const previewRect = ui.videoPreview.getBoundingClientRect()
+    const captionRect = el.getBoundingClientRect()
+    const halfX = previewRect.width
+      ? (captionRect.width / 2 / previewRect.width) * 100
+      : 0
+    const halfY = previewRect.height
+      ? (captionRect.height / 2 / previewRect.height) * 100
+      : 0
+    return {
+      x: clamp(x, halfX, 100 - halfX),
+      y: clamp(y, halfY, 100 - halfY),
+    }
+  }
+
+  function snapCaptionPoint(el: HTMLElement, point: { x: number; y: number }) {
+    let x = point.x
+    let y = point.y
+    let snapX = false
+    let snapY = ""
+
+    if (Math.abs(x - CUSTOM_GUIDES.x) <= SNAP_DISTANCE) {
+      x = CUSTOM_GUIDES.x
+      snapX = true
+    }
+
+    const yGuides = [
+      ["top", CUSTOM_GUIDES.top],
+      ["middle", CUSTOM_GUIDES.middle],
+      ["bottom", CUSTOM_GUIDES.bottom],
+    ] as const
+    const nearestY = yGuides.find(([, value]) => Math.abs(y - value) <= SNAP_DISTANCE)
+    if (nearestY) {
+      snapY = nearestY[0]
+      y = nearestY[1]
+    }
+
+    return { point: clampCaptionPoint(el, x, y), snapX, snapY }
+  }
+
+  function updateGuides(snapX = false, snapY = "") {
+    ui.captionGuides.hidden = !dragState
+    ui.captionGuides.classList.toggle("show-x", snapX)
+    ui.captionGuides.classList.toggle("show-top", snapY === "top")
+    ui.captionGuides.classList.toggle("show-middle", snapY === "middle")
+    ui.captionGuides.classList.toggle("show-bottom", snapY === "bottom")
+  }
+
+  function setCustomCaptionPosition(
+    el: HTMLElement,
+    x: number,
+    y: number,
+    syncControls = false,
+  ) {
+    const style = boxStyle(el)
+    const point = clampCaptionPoint(el, x, y)
+    style.position = "custom"
+    style.customX = point.x
+    style.customY = point.y
+    setActivePresetId("")
+    applyCaptionBoxStyle(el)
+    if (syncControls) {
+      syncStyleControls()
+      renderPresets()
+    }
+  }
+
+  function pointerPoint(event: PointerEvent) {
+    const previewRect = ui.videoPreview.getBoundingClientRect()
+    const x =
+      ((event.clientX - dragState!.offsetX - previewRect.left) / previewRect.width) *
+      100
+    const y =
+      ((event.clientY - dragState!.offsetY - previewRect.top) / previewRect.height) *
+      100
+    return clampCaptionPoint(dragState!.el, x, y)
+  }
+
+  function isCaptionResizeHit(event: PointerEvent, box: HTMLElement) {
+    const rect = box.getBoundingClientRect()
+    return (
+      event.clientX >= rect.right - CAPTION_RESIZE_HIT_SIZE &&
+      event.clientY >= rect.bottom - CAPTION_RESIZE_HIT_SIZE
+    )
+  }
+
+  function startCaptionResize(event: PointerEvent, box: HTMLElement) {
+    const previewRect = ui.videoPreview.getBoundingClientRect()
+    if (!previewRect.width || !previewRect.height) return
+
+    event.preventDefault()
+    setActiveCaptionFromBox(box)
+    syncStyleControls()
+    resizeState = {
+      el: box,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startSize: Number(boxStyle(box).size) || 1,
+      started: false,
+    }
+    ui.videoPreview.classList.add("is-caption-resizing")
+    box.setPointerCapture?.(event.pointerId)
+    box.focus({ preventScroll: true })
+  }
+
+  function moveCaptionResize(event: PointerEvent) {
+    if (!resizeState || event.pointerId !== resizeState.pointerId) return
+    event.preventDefault()
+
+    const moved =
+      Math.abs(event.clientX - resizeState.startClientX) > 2 ||
+      Math.abs(event.clientY - resizeState.startClientY) > 2
+    if (!resizeState.started && !moved) return
+    if (!resizeState.started) {
+      resizeState.started = true
+      setActivePresetId("")
+      renderPresets()
+    }
+
+    const previewRect = ui.videoPreview.getBoundingClientRect()
+    const base = Math.max(1, Math.min(previewRect.width, previewRect.height))
+    const diagonalDelta =
+      (event.clientX - resizeState.startClientX + event.clientY - resizeState.startClientY) /
+      base
+    const style = boxStyle(resizeState.el)
+    style.size = clamp(
+      resizeState.startSize + diagonalDelta * 2.25,
+      CAPTION_SIZE_MIN,
+      CAPTION_SIZE_MAX,
+    )
+    applyCaptionBoxStyle(resizeState.el)
+    syncStyleControls()
+  }
+
+  function endCaptionResize(event: PointerEvent) {
+    if (!resizeState || event.pointerId !== resizeState.pointerId) return
+    resizeState.el.releasePointerCapture?.(event.pointerId)
+    resizeState = null
+    ui.videoPreview.classList.remove("is-caption-resizing")
+    syncStyleControls()
+  }
+
+  function startCaptionDrag(event: PointerEvent) {
+    const box = (event.target as Element).closest(".caption-box") as HTMLElement
+    if (event.button !== 0 || !box?.textContent?.trim()) return
+    if (isCaptionResizeHit(event, box)) {
+      startCaptionResize(event, box)
+      return
+    }
+    const previewRect = ui.videoPreview.getBoundingClientRect()
+    const captionRect = box.getBoundingClientRect()
+    if (!previewRect.width || !previewRect.height) return
+
+    event.preventDefault()
+    setActiveCaptionFromBox(box)
+    syncStyleControls()
+    const centerX = captionRect.left + captionRect.width / 2
+    const centerY = captionRect.top + captionRect.height / 2
+    dragState = {
+      el: box,
+      role: activeCaptionRole,
+      pointerId: event.pointerId,
+      offsetX: event.clientX - centerX,
+      offsetY: event.clientY - centerY,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      started: false,
+    }
+    box.setPointerCapture?.(event.pointerId)
+    box.focus({ preventScroll: true })
+  }
+
+  function moveCaptionDrag(event: PointerEvent) {
+    if (resizeState) {
+      moveCaptionResize(event)
+      return
+    }
+    if (!dragState || event.pointerId !== dragState.pointerId) return
+    const moved =
+      Math.abs(event.clientX - dragState.startClientX) > 3 ||
+      Math.abs(event.clientY - dragState.startClientY) > 3
+    if (!dragState.started && !moved) return
+    if (!dragState.started) {
+      dragState.started = true
+      ui.videoPreview.classList.add("is-caption-dragging")
+      const point = captionCenterPercent(dragState.el)
+      setCustomCaptionPosition(dragState.el, point.x, point.y, true)
+      updateGuides()
+    }
+    const snapped = snapCaptionPoint(dragState.el, pointerPoint(event))
+    const style = boxStyle(dragState.el)
+    style.customX = snapped.point.x
+    style.customY = snapped.point.y
+    applyCaptionBoxStyle(dragState.el)
+    updateGuides(snapped.snapX, snapped.snapY)
+  }
+
+  function endCaptionDrag(event: PointerEvent) {
+    if (resizeState) {
+      endCaptionResize(event)
+      return
+    }
+    if (!dragState || event.pointerId !== dragState.pointerId) return
+    dragState.el.releasePointerCapture?.(event.pointerId)
+    const dragged = dragState.started
+    dragState = null
+    if (dragged) {
+      ui.videoPreview.classList.remove("is-caption-dragging")
+      updateGuides()
+      syncStyleControls()
+    }
+  }
+
+  function moveCaptionWithKeyboard(event: KeyboardEvent) {
+    const box = (event.target as Element).closest(".caption-box") as HTMLElement
+    if (!box) return
+    setActiveCaptionFromBox(box)
+    const style = boxStyle(box)
+    const delta = event.shiftKey ? 5 : 1
+    const point =
+      style.position === "custom"
+        ? {
+            x: Number(style.customX) || 50,
+            y: Number(style.customY) || 88,
+          }
+        : captionCenterPercent(box)
+
+    if (event.key === "ArrowLeft") point.x -= delta
+    else if (event.key === "ArrowRight") point.x += delta
+    else if (event.key === "ArrowUp") point.y -= delta
+    else if (event.key === "ArrowDown") point.y += delta
+    else return
+
+    event.preventDefault()
+    setCustomCaptionPosition(box, point.x, point.y, true)
+  }
+
+  function setPresetPosition(position: string) {
+    const targetBox =
+      captionBoxes().find(
+        (box) =>
+          (box.dataset.role || "default") === activeCaptionRole &&
+          (box.dataset.lang || "") === activeCaptionLang,
+      ) ||
+      captionBoxes()[0]
+    if (position === "custom") {
+      if (!targetBox) return
+      const point = captionCenterPercent(targetBox)
+      setCustomCaptionPosition(targetBox, point.x, point.y, true)
+      return
+    }
+
+    activeStyle().position = position
+    syncStyleControls()
+    applyCaptionStyle()
+  }
+
+  function setActiveTrack(role = "default", lang = "") {
+    setActiveCaptionTrack(role, lang)
+    syncStyleControls()
+    renderPresets()
+  }
+
+  function renderCaptions(
+    tracks: Array<{
+      lang: string
+      label: string
+      role?: string
+      text: string
+      segment?: any
+    }>,
+    time = 0,
+  ) {
+    const wanted = new Set<string>()
+
+    tracks.forEach((track) => {
+      const role = track.role || "default"
+      const key = `${role}:${track.lang}`
+      wanted.add(key)
+
+      let box = ui.caption.querySelector<HTMLElement>(
+        `.caption-box[data-key="${CSS.escape(key)}"]`,
+      )
+      if (!box) {
+        box = document.createElement("div")
+        box.className = `caption-box caption-box--${role}`
+        box.dataset.key = key
+        box.dataset.role = role
+        box.dataset.lang = track.lang
+        box.role = "button"
+        box.tabIndex = 0
+        ui.caption.appendChild(box)
+      }
+
+      renderCaptionText(box, track, time)
+      box.hidden = !track.text.trim()
+      box.setAttribute(
+        "aria-label",
+        `${track.label}. ${ui.caption.dataset.dragLabel || ""}`.trim(),
+      )
+      applyCaptionBoxStyle(box)
+    })
+
+    captionBoxes().forEach((box) => {
+      if (!wanted.has(box.dataset.key || "")) box.remove()
+    })
+
+    const activeTrackVisible = tracks.some(
+      (track) =>
+        (track.role || "default") === activeCaptionRole &&
+        (track.lang || "") === activeCaptionLang,
+    )
+    if (tracks.length && !activeTrackVisible) {
+      const nextTrack =
+        tracks.find((track) => (track.role || "default") === "subtitles") ||
+        tracks[0]
+      setActiveCaptionTrack(nextTrack.role || "default", nextTrack.lang || "")
+      syncStyleControls()
     }
   }
 
@@ -207,20 +719,22 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
   }
 
   function applyPreset(p: any) {
-    Object.assign(captionStyle, p.s)
-    activePresetId = p.id
+    Object.assign(activeStyle(), p.s)
+    setActivePresetId(p.id)
     applyCaptionStyle()
     syncStyleControls()
     renderPresets()
   }
 
   function syncStyleControls() {
-    const c = captionStyle
+    const c = activeStyle()
     ui.csFont.value = c.font
     ui.csSize.value = String(c.size)
     ui.csColor.value = c.color
     ui.csBold.checked = c.weight >= 700
+    ui.csItalic.checked = !!c.italic
     ui.csOutline.checked = !!c.outline
+    ui.csWordHighlight.checked = !!c.wordHighlight
     ui.csBg.checked = !!c.bgEnabled
     ui.csBgColor.value = c.bgColor
     ui.csBgOpacity.value = String(c.bgOpacity)
@@ -229,10 +743,13 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
     $$("button", ui.csPosition).forEach((b) => {
       b.classList.toggle("is-on", b.dataset.pos === c.position)
     })
+    $$("button", ui.csAlign).forEach((b) => {
+      b.classList.toggle("is-on", b.dataset.align === (c.align || "center"))
+    })
   }
 
   function onManualStyleChange() {
-    activePresetId = ""
+    setActivePresetId("")
     applyCaptionStyle()
     renderPresets()
   }
@@ -245,50 +762,77 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
       ui.styleToggle.classList.toggle("is-open", open)
     })
     ui.csFont.addEventListener("change", () => {
-      captionStyle.font = ui.csFont.value
+      activeStyle().font = ui.csFont.value
       onManualStyleChange()
     })
     ui.csSize.addEventListener("input", () => {
-      captionStyle.size = Number(ui.csSize.value)
+      activeStyle().size = Number(ui.csSize.value)
       onManualStyleChange()
     })
     ui.csColor.addEventListener("input", () => {
-      captionStyle.color = ui.csColor.value
+      activeStyle().color = ui.csColor.value
       onManualStyleChange()
     })
     ui.csBold.addEventListener("change", () => {
-      captionStyle.weight = ui.csBold.checked ? 700 : 600
+      activeStyle().weight = ui.csBold.checked ? 700 : 600
+      onManualStyleChange()
+    })
+    ui.csItalic.addEventListener("change", () => {
+      activeStyle().italic = ui.csItalic.checked
       onManualStyleChange()
     })
     ui.csOutline.addEventListener("change", () => {
-      captionStyle.outline = ui.csOutline.checked
+      activeStyle().outline = ui.csOutline.checked
       onManualStyleChange()
     })
+    ui.csWordHighlight.addEventListener("change", () => {
+      activeStyle().wordHighlight = ui.csWordHighlight.checked
+      onManualStyleChange()
+      ui.video.dispatchEvent(new Event("timeupdate"))
+    })
     ui.csBg.addEventListener("change", () => {
-      captionStyle.bgEnabled = ui.csBg.checked
+      activeStyle().bgEnabled = ui.csBg.checked
       syncStyleControls()
       onManualStyleChange()
     })
     ui.csBgColor.addEventListener("input", () => {
-      captionStyle.bgColor = ui.csBgColor.value
+      activeStyle().bgColor = ui.csBgColor.value
       onManualStyleChange()
     })
     ui.csBgOpacity.addEventListener("input", () => {
-      captionStyle.bgOpacity = Number(ui.csBgOpacity.value)
+      activeStyle().bgOpacity = Number(ui.csBgOpacity.value)
       onManualStyleChange()
     })
     ui.csPosition.addEventListener("click", (e: Event) => {
       const b = (e.target as Element).closest("button[data-pos]") as HTMLElement
       if (!b) return
-      captionStyle.position = b.dataset.pos
+      setPresetPosition(b.dataset.pos || "bottom")
+    })
+    ui.csAlign.addEventListener("click", (e: Event) => {
+      const b = (e.target as Element).closest("button[data-align]") as HTMLElement
+      if (!b) return
+      activeStyle().align = b.dataset.align || "center"
+      onManualStyleChange()
       syncStyleControls()
-      applyCaptionStyle()
+    })
+    ui.caption.addEventListener("pointerdown", startCaptionDrag)
+    ui.caption.addEventListener("pointermove", moveCaptionDrag)
+    ui.caption.addEventListener("pointerup", endCaptionDrag)
+    ui.caption.addEventListener("pointercancel", endCaptionDrag)
+    ui.caption.addEventListener("keydown", moveCaptionWithKeyboard)
+    ui.caption.addEventListener("focusin", (event: FocusEvent) => {
+      const box = (event.target as Element).closest(".caption-box") as HTMLElement
+      if (!box) return
+      setActiveCaptionFromBox(box)
+      syncStyleControls()
     })
   }
 
   return {
     applyCaptionStyle,
+    renderCaptions,
     renderPresets,
+    setActiveTrack,
     syncStyleControls,
     wireStyleControls,
   }
