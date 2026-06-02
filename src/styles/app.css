@@ -2564,7 +2564,7 @@ video {
 .tl-handle {
   position: absolute;
   top: 0;
-  width: 8px;
+  width: 12px;
   height: 100%;
   cursor: ew-resize;
   z-index: 2;
@@ -2575,14 +2575,17 @@ video {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 2px;
-  height: 38%;
+  width: 1px;
+  height: 32%;
   border-radius: 2px;
-  background: #4a546a;
-}
-.tl-block:hover .tl-handle::after,
-.tl-block.is-active .tl-handle::after {
   background: #b8f060;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.tl-handle:hover::after,
+.tl-handle:focus-visible::after,
+.tl-block.is-dragging .tl-handle::after {
+  opacity: 1;
 }
 .tl-handle-l {
   left: 0;

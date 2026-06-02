@@ -32,8 +32,10 @@ const BRACKETED_SOUND_TRANSLATIONS: Record<string, Record<string, string>> = {
 }
 
 const BRACKETED_CUE_PATTERN = /\[([^\[\]]{1,80})\]/g
-const MARIAN_BATCH_SIZE = 48
+const MARIAN_BATCH_SIZE = 1
 const NLLB_BATCH_SIZE = 32
+const NOISY_PUNCTUATION_RUN = /(?:[.!?…]\s*){4,}/gu
+const NOISY_TRANSLATION_TAIL = /[.!?…](?:\s*[.!?…¡¿,;:>]){3,}.*$/u
 const REPEATED_TRAILING_SYMBOLS = /(?:[^\p{L}\p{N}\s])(?:\s*[^\p{L}\p{N}\s]){3,}\s*$/u
 const TRANSLATION_DEBUG = import.meta.env.DEV
 const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator
@@ -95,14 +97,46 @@ function enforceBracketedSoundCues(
   return `${text.trimEnd()} ${missingLabels}`.trim()
 }
 
-function cleanTranslationArtifacts(text: string) {
+function terminalPunctuationForSource(sourceText = "", fallbackRun = "") {
+  const source = sourceText.trim()
+  if (/[?？]\s*$/.test(source)) return "?"
+  if (/[!！]\s*$/.test(source)) return "!"
+  if (/[.…]\s*$/.test(source)) return "."
+  if (fallbackRun.includes("?")) return "?"
+  if (fallbackRun.includes("!")) return "!"
+  return "."
+}
+
+function cleanTranslationArtifacts(text: string, sourceText = "") {
   let cleaned = String(text || "").trim()
   let previous = ""
   while (cleaned && cleaned !== previous) {
     previous = cleaned
-    cleaned = cleaned.replace(REPEATED_TRAILING_SYMBOLS, "").trimEnd()
+    cleaned = cleaned
+      .replace(NOISY_TRANSLATION_TAIL, (tail, offset, fullText) => {
+        const prefix = fullText.slice(0, offset).trimEnd()
+        if (!prefix) return ""
+        if (/[.!?…]\s*$/.test(prefix)) return prefix
+        return `${prefix}${terminalPunctuationForSource(sourceText, tail)}`
+      })
+      .replace(NOISY_PUNCTUATION_RUN, (run) => {
+        return terminalPunctuationForSource(sourceText, run)
+      })
+      .replace(/\s+([,.;:!?])/g, "$1")
+      .replace(/([¿¡])\s+/g, "$1")
+      .replace(REPEATED_TRAILING_SYMBOLS, "")
+      .trimEnd()
   }
   return cleaned
+}
+
+function hasNoisyTranslationArtifacts(text: string) {
+  NOISY_PUNCTUATION_RUN.lastIndex = 0
+  return (
+    NOISY_TRANSLATION_TAIL.test(text) ||
+    NOISY_PUNCTUATION_RUN.test(text) ||
+    REPEATED_TRAILING_SYMBOLS.test(text)
+  )
 }
 
 function marianGenerationOptions(texts: string[]) {
@@ -110,9 +144,11 @@ function marianGenerationOptions(texts: string[]) {
     (max, text) => Math.max(max, String(text || "").length),
     0,
   )
-  const maxNewTokens = Math.max(24, Math.min(80, Math.ceil(maxChars / 3) + 12))
+  const maxNewTokens = Math.max(8, Math.min(48, Math.ceil(maxChars / 5) + 6))
   return {
     do_sample: false,
+    early_stopping: true,
+    max_length: maxNewTokens,
     max_new_tokens: maxNewTokens,
     no_repeat_ngram_size: 3,
     num_beams: 1,
@@ -156,14 +192,26 @@ function logLocalTranslationBatch({
     `[translate:${backend}] ${sourceLang} -> ${targetLang}${suffix}`,
   )
   if (generation) console.debug("generation", generation)
+  console.debug("request texts", input)
   console.table(
     input.map((text, index) => ({
       index,
       input: text,
       raw: rawTranslationText(rawItems[index], text),
-      output: output[index],
+      cleaned: output[index],
+      changed: rawTranslationText(rawItems[index], text) !== output[index],
     })),
   )
+  const noisyRows = rawItems
+    .map((item, index) => ({
+      index,
+      raw: rawTranslationText(item, input[index] || ""),
+      cleaned: output[index],
+    }))
+    .filter((row) => hasNoisyTranslationArtifacts(row.raw))
+  if (noisyRows.length) {
+    console.warn(`[translate:${backend}] cleaned noisy output`, noisyRows)
+  }
   console.debug("raw result", raw)
   console.groupEnd()
 }
@@ -266,7 +314,7 @@ export function createTranslationService(options: TranslationServiceOptions) {
   function normalizeNllbTranslations(translated: any, fallbackTexts: string[]) {
     const normalized = Array.isArray(translated) ? translated : [translated]
     return fallbackTexts.map((text, i) =>
-      cleanTranslationArtifacts(rawTranslationText(normalized[i], text)),
+      cleanTranslationArtifacts(rawTranslationText(normalized[i], text), text),
     )
   }
 
@@ -501,6 +549,7 @@ export function createTranslationService(options: TranslationServiceOptions) {
             s.text,
             targetLang,
           ),
+          s.text,
         ) || s.text,
     }))
   }
