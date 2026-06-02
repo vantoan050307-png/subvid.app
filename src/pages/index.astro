@@ -1,11 +1,11 @@
 ---
-import Layout from "../layouts/Layout.astro"
-import Home from "../components/Home.astro"
-import { useTranslations } from "../i18n/ui"
+import Layout from "@/layouts/Layout.astro"
+import Home from "@/components/Home.astro"
+import { useTranslations } from "@/i18n/ui"
 
-// Rendered on-demand so the middleware can detect the browser language and
-// redirect to the right locale. The localized pages (e.g. /es/) stay static.
-export const prerender = false
+// Keep the default-language homepage as a static asset. The edge middleware
+// only decides whether visitors to `/` should be redirected to another locale.
+export const prerender = true
 
 const t = useTranslations(Astro.currentLocale)
 ---

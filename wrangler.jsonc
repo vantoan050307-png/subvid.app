@@ -5,5 +5,9 @@
   // whatever is declared here. We only pin a valid Worker name because the
   // package/folder name contains a dot, which isn't a valid Worker name.
   "name": "subthis-now",
-  "compatibility_date": "2026-06-02"
+  "main": "./src/worker.ts",
+  "compatibility_date": "2026-06-02",
+  "assets": {
+    "run_worker_first": ["/"]
+  }
 }

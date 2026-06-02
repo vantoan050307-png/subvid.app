@@ -2,23 +2,17 @@
 // i18n dictionary
 // ─────────────────────────────────────────────────────────────────────────
 // To add a new language: add its code to `astro.config.mjs` (`i18n.locales`),
-// create `src/pages/<code>/index.astro` (copy `src/pages/es/index.astro`), and
-// add a `<code>: { ... }` block below mirroring the English keys.
+// create `@/pages/<code>/index.astro` (copy `@/pages/es/index.astro`),
+// add it to `@/i18n/locales.ts`, and add a `<code>: { ... }` block below mirroring
+// the English keys.
 //
 // Strings under `t.<group>` are used at build time inside `.astro` components
 // (zero client cost). Strings under `t.client` are serialized into each static
 // page and read by `app.ts` at runtime — only the active language ships, so
 // there is no performance penalty.
 
-export const defaultLang = "en" as const
-
-// Display names for the language switcher.
-export const languages = {
-  en: "English",
-  es: "Español",
-} as const
-
-export type Lang = keyof typeof languages
+export { defaultLang, languages, type Lang } from "@/i18n/locales"
+import { defaultLang, type Lang } from "@/i18n/locales"
 
 export const ui = {
   en: {
