@@ -266,6 +266,51 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
     return $$<HTMLElement>(".caption-box", ui.caption)
   }
 
+  function captionLayerElements() {
+    return [ui.caption, ui.captionGuides].filter(Boolean) as HTMLElement[]
+  }
+
+  function syncCaptionLayerBounds() {
+    const previewRect = ui.videoPreview.getBoundingClientRect()
+    const videoWidth = Number(ui.video?.videoWidth) || 0
+    const videoHeight = Number(ui.video?.videoHeight) || 0
+    let left = 0
+    let top = 0
+    let width = previewRect.width
+    let height = previewRect.height
+
+    if (previewRect.width && previewRect.height && videoWidth && videoHeight) {
+      const previewRatio = previewRect.width / previewRect.height
+      const videoRatio = videoWidth / videoHeight
+
+      if (previewRatio > videoRatio) {
+        height = previewRect.height
+        width = height * videoRatio
+        left = (previewRect.width - width) / 2
+      } else {
+        width = previewRect.width
+        height = width / videoRatio
+        top = (previewRect.height - height) / 2
+      }
+    }
+
+    captionLayerElements().forEach((layer) => {
+      layer.style.left = `${left}px`
+      layer.style.top = `${top}px`
+      layer.style.right = "auto"
+      layer.style.bottom = "auto"
+      layer.style.width = `${width}px`
+      layer.style.height = `${height}px`
+    })
+  }
+
+  function captionLayerRect() {
+    syncCaptionLayerBounds()
+    const rect = ui.caption.getBoundingClientRect()
+    if (rect.width && rect.height) return rect
+    return ui.videoPreview.getBoundingClientRect()
+  }
+
   function activeStyle() {
     return captionStyleForTrack(activeCaptionRole, activeCaptionLang)
   }
@@ -291,6 +336,26 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
 
   function applyCaptionStyle() {
     captionBoxes().forEach((box) => applyCaptionBoxStyle(box))
+  }
+
+  function setWordHighlightForTracks(
+    tracks: Array<{ role?: string; lang?: string }>,
+    enabled: boolean,
+  ) {
+    tracks.forEach((track) => {
+      captionStyleForTrack(track.role || "default", track.lang || "").wordHighlight =
+        enabled
+    })
+    applyCaptionStyle()
+  }
+
+  function setWordHighlightForAll(enabled: boolean) {
+    captionStyle.wordHighlight = enabled
+    transcriptionCaptionStyle.wordHighlight = enabled
+    captionStylesByTrack.forEach((style) => {
+      style.wordHighlight = enabled
+    })
+    applyCaptionStyle()
   }
 
   function renderCaptionText(box: HTMLElement, track: any, time: number) {
@@ -346,7 +411,7 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
   }
 
   function captionCenterPercent(el: HTMLElement) {
-    const previewRect = ui.videoPreview.getBoundingClientRect()
+    const previewRect = captionLayerRect()
     const captionRect = el.getBoundingClientRect()
     if (!previewRect.width || !previewRect.height) {
       const style = boxStyle(el)
@@ -365,7 +430,7 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
   }
 
   function clampCaptionPoint(el: HTMLElement, x: number, y: number) {
-    const previewRect = ui.videoPreview.getBoundingClientRect()
+    const previewRect = captionLayerRect()
     const captionRect = el.getBoundingClientRect()
     const halfX = previewRect.width
       ? (captionRect.width / 2 / previewRect.width) * 100
@@ -432,7 +497,7 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
   }
 
   function pointerPoint(event: PointerEvent) {
-    const previewRect = ui.videoPreview.getBoundingClientRect()
+    const previewRect = captionLayerRect()
     const x =
       ((event.clientX - dragState!.offsetX - previewRect.left) / previewRect.width) *
       100
@@ -638,6 +703,7 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
     }>,
     time = 0,
   ) {
+    syncCaptionLayerBounds()
     const wanted = new Set<string>()
 
     tracks.forEach((track) => {
@@ -755,6 +821,14 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
   }
 
   function wireStyleControls() {
+    syncCaptionLayerBounds()
+    ui.video.addEventListener("loadedmetadata", syncCaptionLayerBounds)
+    ui.video.addEventListener("loadeddata", syncCaptionLayerBounds)
+    window.addEventListener("resize", syncCaptionLayerBounds)
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(syncCaptionLayerBounds).observe(ui.videoPreview)
+    }
+
     ui.styleToggle.addEventListener("click", () => {
       const open = ui.styleControls.hidden
       ui.styleControls.hidden = !open
@@ -786,7 +860,7 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
       onManualStyleChange()
     })
     ui.csWordHighlight.addEventListener("change", () => {
-      activeStyle().wordHighlight = ui.csWordHighlight.checked
+      setWordHighlightForAll(ui.csWordHighlight.checked)
       onManualStyleChange()
       ui.video.dispatchEvent(new Event("timeupdate"))
     })
@@ -832,6 +906,8 @@ export function createSubtitleStyleController({ ui, I18N }: { ui: any; I18N: any
     applyCaptionStyle,
     renderCaptions,
     renderPresets,
+    setWordHighlightForAll,
+    setWordHighlightForTracks,
     setActiveTrack,
     syncStyleControls,
     wireStyleControls,

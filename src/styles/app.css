@@ -1483,7 +1483,10 @@ video {
 }
 .caption-layer {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   z-index: 3;
   pointer-events: none;
 }
@@ -1494,7 +1497,7 @@ video {
   transform: translateX(-50%);
   box-sizing: border-box;
   width: max-content;
-  max-width: min(86%, calc(100% - 1.5rem));
+  max-width: 80%;
   padding: 0.22rem 0.6rem;
   border-radius: 6px;
   background: rgba(6, 8, 11, 0.84);
@@ -1503,6 +1506,7 @@ video {
   font-weight: 600;
   text-align: center;
   text-wrap: balance;
+  overflow-wrap: anywhere;
   white-space: pre-line;
   pointer-events: auto;
   touch-action: none;
@@ -1574,7 +1578,10 @@ video {
 }
 .caption-guides {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   z-index: 2;
   pointer-events: none;
 }
@@ -2348,10 +2355,9 @@ video {
   align-items: center;
   gap: 0.3rem;
 }
-/* The slider expands on hover so it stays compact otherwise. */
 .tl-volume-range {
-  width: 0;
-  opacity: 0;
+  width: 72px;
+  opacity: 1;
   height: 4px;
   margin: 0;
   cursor: pointer;
@@ -2359,11 +2365,6 @@ video {
   transition:
     width 160ms ease,
     opacity 160ms ease;
-}
-.tl-volume:hover .tl-volume-range,
-.tl-volume:focus-within .tl-volume-range {
-  width: 72px;
-  opacity: 1;
 }
 .tl-icon-btn {
   width: 28px;
@@ -2490,15 +2491,60 @@ video {
   right: 0;
   height: 58px;
 }
-.tl-track-label {
+.tl-track-controls {
   position: absolute;
   top: 0;
   left: 0.55rem;
-  z-index: 1;
-  max-width: 220px;
-  padding: 0.12rem 0.45rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  max-width: 260px;
+  padding: 0.12rem 0.32rem;
   border-radius: 999px;
-  background: rgba(8, 10, 14, 0.82);
+  background: rgba(8, 10, 14, 0.86);
+  border: 1px solid rgba(28, 34, 52, 0.82);
+}
+.tl-track-btn {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #66738c;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+}
+.tl-track-btn:hover {
+  background: rgba(184, 240, 96, 0.1);
+  color: #dce6c3;
+}
+.tl-track-btn[aria-pressed="true"] {
+  color: #b8f060;
+  background: rgba(184, 240, 96, 0.14);
+}
+.tl-track-btn svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tl-track-btn circle {
+  fill: currentColor;
+  stroke: none;
+}
+.tl-track-label {
+  max-width: 220px;
+  padding: 0 0.18rem 0 0.28rem;
   color: #7f8ba3;
   font-size: 0.62rem;
   font-weight: 700;
@@ -2539,6 +2585,25 @@ video {
     rgba(184, 240, 96, 0.22),
     rgba(184, 240, 96, 0.08)
   );
+}
+.tl-track-row.is-hidden .tl-block {
+  opacity: 0.34;
+  filter: saturate(0.35);
+  border-color: #202839;
+  background: linear-gradient(180deg, #10151d, #0c1017);
+}
+.tl-track-row.is-hidden .tl-block-label {
+  color: #6c7588;
+}
+.tl-track-row.is-locked .tl-block {
+  cursor: default;
+}
+.tl-track-row.is-locked .tl-handle {
+  cursor: default;
+  opacity: 0.28;
+}
+.tl-track-row.is-locked .tl-handle::after {
+  opacity: 0;
 }
 .tl-block.is-dragging {
   cursor: grabbing;

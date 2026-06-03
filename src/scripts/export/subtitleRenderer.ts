@@ -5,12 +5,46 @@ import {
 } from "@/scripts/subtitleStyle.ts"
 import { estimatedWordsForSegment } from "@/scripts/subtitles.ts"
 
+const CAPTION_MAX_WIDTH_RATIO = 0.8
+
+function splitTextToFit(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+) {
+  if (ctx.measureText(text).width <= maxWidth) return [text]
+
+  const chunks: string[] = []
+  let chunk = ""
+  for (const char of text) {
+    const test = `${chunk}${char}`
+    if (chunk && ctx.measureText(test).width > maxWidth) {
+      chunks.push(chunk)
+      chunk = char
+    } else {
+      chunk = test
+    }
+  }
+  if (chunk) chunks.push(chunk)
+  return chunks
+}
+
 export function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
   const lines = []
   for (const paragraph of text.split(/\n+/)) {
     const words = paragraph.split(/\s+/)
     let line = ""
     for (const word of words) {
+      const fragments = splitTextToFit(ctx, word, maxWidth)
+      if (fragments.length > 1) {
+        if (line) {
+          lines.push(line)
+          line = ""
+        }
+        lines.push(...fragments.slice(0, -1))
+        line = fragments.at(-1) || ""
+        continue
+      }
       const test = line ? `${line} ${word}` : word
       if (ctx.measureText(test).width > maxWidth && line) {
         lines.push(line)
@@ -38,6 +72,22 @@ function wrapWords(
   let lineWidth = 0
 
   words.forEach((word) => {
+    const fragments = splitTextToFit(ctx, word.text, maxWidth)
+    if (fragments.length > 1) {
+      if (line.length) {
+        lines.push({ words: line, width: lineWidth })
+        line = []
+        lineWidth = 0
+      }
+      fragments.forEach((fragment) => {
+        lines.push({
+          words: [{ ...word, text: fragment, width: ctx.measureText(fragment).width }],
+          width: ctx.measureText(fragment).width,
+        })
+      })
+      return
+    }
+
     const width = ctx.measureText(word.text).width
     const nextWidth = line.length ? lineWidth + spaceWidth + width : width
     if (line.length && nextWidth > maxWidth) {
@@ -108,25 +158,27 @@ function drawSubtitleBox(
   ctx.textBaseline = "alphabetic"
 
   const wordHighlight = !!c.wordHighlight
-  const wordLines = wordHighlight
-    ? wrapWords(ctx, estimatedWordsForSegment(seg), w * 0.82)
-    : []
-  const textLines = wordHighlight
-    ? wordLines.map((line) => line.words.map((word) => word.text).join(" "))
-    : wrapText(ctx as CanvasRenderingContext2D, text.trim(), w * 0.82)
   const lineHeight = fontSize * 1.28
   const padX = fontSize * 0.5
   const padY = fontSize * 0.3
+  const maxBlockW = w * CAPTION_MAX_WIDTH_RATIO
+  const maxTextW = Math.max(fontSize, maxBlockW - padX * 2)
+  const wordLines = wordHighlight
+    ? wrapWords(ctx, estimatedWordsForSegment(seg), maxTextW)
+    : []
+  const textLines = wordHighlight
+    ? wordLines.map((line) => line.words.map((word) => word.text).join(" "))
+    : wrapText(ctx as CanvasRenderingContext2D, text.trim(), maxTextW)
   const blockH = textLines.length * lineHeight
-  const blockW =
+  const widestLine =
     Math.max(
       ...(
         wordHighlight
           ? wordLines.map((line) => line.width)
           : textLines.map((line) => ctx.measureText(line).width)
       ),
-    ) +
-    padX * 2
+    ) || 0
+  const blockW = Math.min(maxBlockW, widestLine + padX * 2)
   let x = w / 2
   let y: number
   if (c.position === "custom") {
