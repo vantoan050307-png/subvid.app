@@ -13,6 +13,19 @@ export type SubtitleWord = {
   text: string
 }
 
+type NormalizeSegmentsOptions = {
+  audio?: Float32Array
+  sampleRate?: number
+}
+
+type SpeechRun = {
+  start: number
+  end: number
+}
+
+const DEFAULT_SAMPLE_RATE = 16_000
+const SILENCE_BREAK_SECONDS = 0.55
+
 export function formatSrtTime(seconds: number): string {
   const c = Math.max(0, Number.isFinite(seconds) ? seconds : 0)
   const h = Math.floor(c / 3600)
@@ -41,6 +54,125 @@ export function parseClock(value: string): number | null {
   const s = Number(match[2])
   const frac = match[3] ? Number(`0.${match[3]}`) : 0
   return m * 60 + s + frac
+}
+
+function percentile(values: number[], ratio: number) {
+  if (!values.length) return 0
+  const index = Math.max(
+    0,
+    Math.min(values.length - 1, Math.floor((values.length - 1) * ratio)),
+  )
+  return values[index]
+}
+
+function speechRunsForAudio(audio?: Float32Array, sampleRate = DEFAULT_SAMPLE_RATE) {
+  if (!audio?.length || !Number.isFinite(sampleRate) || sampleRate <= 0) return []
+
+  const frameSamples = Math.max(1, Math.round(sampleRate * 0.04))
+  const hopSamples = Math.max(1, Math.round(sampleRate * 0.02))
+  const frameCount = Math.max(1, Math.floor((audio.length - frameSamples) / hopSamples) + 1)
+  const energies = new Array<number>(frameCount)
+
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const start = frame * hopSamples
+    const end = Math.min(audio.length, start + frameSamples)
+    let sum = 0
+    for (let i = start; i < end; i += 1) sum += audio[i] * audio[i]
+    energies[frame] = Math.sqrt(sum / Math.max(1, end - start))
+  }
+
+  const sorted = [...energies].sort((a, b) => a - b)
+  const noiseFloor = percentile(sorted, 0.2)
+  const speechLevel = percentile(sorted, 0.85)
+  const threshold = Math.max(0.003, noiseFloor * 4, speechLevel * 0.12)
+  const runs: SpeechRun[] = []
+  let activeStart = -1
+
+  energies.forEach((energy, frame) => {
+    if (energy >= threshold) {
+      if (activeStart < 0) activeStart = frame
+      return
+    }
+    if (activeStart < 0) return
+    const start = (activeStart * hopSamples) / sampleRate
+    const end = (frame * hopSamples + frameSamples) / sampleRate
+    if (end - start >= 0.06) runs.push({ start, end })
+    activeStart = -1
+  })
+
+  if (activeStart >= 0) {
+    const start = (activeStart * hopSamples) / sampleRate
+    const end = audio.length / sampleRate
+    if (end - start >= 0.06) runs.push({ start, end })
+  }
+
+  return runs.reduce<SpeechRun[]>((merged, run) => {
+    const previous = merged[merged.length - 1]
+    if (previous && run.start - previous.end <= 0.16) {
+      previous.end = Math.max(previous.end, run.end)
+    } else {
+      merged.push({ ...run })
+    }
+    return merged
+  }, [])
+}
+
+function nearestRunEdge(
+  runs: SpeechRun[],
+  time: number,
+  edge: "start" | "end",
+  before: number,
+  after: number,
+) {
+  let best: { value: number; distance: number } | null = null
+  for (const run of runs) {
+    if (run.end < time - before || run.start > time + after) continue
+    const value = edge === "start" ? run.start : run.end
+    const distance = Math.abs(value - time)
+    if (!best || distance < best.distance) best = { value, distance }
+  }
+  return best?.value
+}
+
+function refineSegmentsWithSpeechRuns(
+  segments: SubtitleSegment[],
+  audio?: Float32Array,
+  sampleRate = DEFAULT_SAMPLE_RATE,
+) {
+  const runs = speechRunsForAudio(audio, sampleRate)
+  if (!runs.length) return segments
+  const audioEnd = audio ? audio.length / sampleRate : Number.POSITIVE_INFINITY
+
+  const refined = segments.map((segment) => {
+    const startEdge = nearestRunEdge(runs, segment.start, "start", 0.35, 0.65)
+    const endEdge = nearestRunEdge(runs, segment.end, "end", 0.65, 0.35)
+    const start =
+      startEdge == null ? segment.start : Math.max(0, startEdge - 0.04)
+    const end =
+      endEdge == null ? segment.end : Math.min(audioEnd, endEdge + 0.08)
+    const next = {
+      ...segment,
+      start,
+      end: Math.max(start + 0.35, end),
+    }
+    if (next.words?.length) {
+      next.words = next.words.map((word) => ({ ...word }))
+      next.words[0].start = next.start
+      next.words[next.words.length - 1].end = next.end
+    }
+    return next
+  })
+
+  for (let i = 1; i < refined.length; i += 1) {
+    const previous = refined[i - 1]
+    const current = refined[i]
+    if (current.start > previous.end) continue
+    const boundary = (previous.end + current.start) / 2
+    previous.end = Math.max(previous.start + 0.25, boundary - 0.01)
+    current.start = Math.min(current.end - 0.25, previous.end + 0.02)
+  }
+
+  return refined
 }
 
 function normalizedRange(chunk: any, index: number) {
@@ -124,10 +256,15 @@ function normalizeWordLevelSegments(chunks: any[]): SubtitleSegment[] {
 
   words.forEach((word) => {
     if (line.length) {
+      const previousWord = line[line.length - 1]
+      const silenceBefore = word.start - previousWord.end
       const nextText = wordsText([...line, word])
       const nextDuration = word.end - line[0].start
       const shouldBreak =
-        line.length >= 8 || nextText.length > 46 || nextDuration > 5.2
+        silenceBefore > SILENCE_BREAK_SECONDS ||
+        line.length >= 8 ||
+        nextText.length > 46 ||
+        nextDuration > 5.2
       if (shouldBreak) flush()
     }
 
@@ -188,14 +325,23 @@ export function estimatedWordsForSegment(segment: SubtitleSegment): SubtitleWord
   })
 }
 
-export function normalizeSegments(output: any): SubtitleSegment[] {
+export function normalizeSegments(
+  output: any,
+  options: NormalizeSegmentsOptions = {},
+): SubtitleSegment[] {
   if (!output || !Array.isArray(output.chunks)) {
     const text = output?.text?.trim()
     return text ? [{ start: 0, end: 6, text }] : []
   }
-  if (isWordLevelChunks(output.chunks)) return normalizeWordLevelSegments(output.chunks)
+  if (isWordLevelChunks(output.chunks)) {
+    return refineSegmentsWithSpeechRuns(
+      normalizeWordLevelSegments(output.chunks),
+      options.audio,
+      options.sampleRate,
+    )
+  }
 
-  return output.chunks
+  const segments = output.chunks
     .map((chunk: any, index: number) => {
       const { start, end } = normalizedRange(chunk, index)
       return {
@@ -205,6 +351,8 @@ export function normalizeSegments(output: any): SubtitleSegment[] {
       }
     })
     .filter((s: SubtitleSegment) => s.text.length > 0)
+
+  return refineSegmentsWithSpeechRuns(segments, options.audio, options.sampleRate)
 }
 
 export function buildSrt(segments: SubtitleSegment[]): string {

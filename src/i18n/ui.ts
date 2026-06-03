@@ -62,7 +62,7 @@ export const ui = {
         "Keep the detected original text next to the translated subtitles.",
       wordAnimation: "Animate by word",
       wordAnimationHint:
-        "More precise karaoke-style timing, but Whisper takes longer.",
+        "Highlight each word while the video plays.",
       generate: "Generate subtitles",
       preparing: "Preparing\u2026",
     },
@@ -74,6 +74,14 @@ export const ui = {
       redoTitle: "Redo (Ctrl/Cmd+Shift+Z)",
       downloadSrt: "Download subtitles (.srt)",
       downloadVideo: "Download video",
+      videoExportOptions: "Video export options",
+      videoFormat: "Format",
+      formatMp4: "MP4",
+      formatWebm: "WebM",
+      videoQuality: "Quality",
+      qualityOptimized: "Optimized",
+      qualityHigh: "High",
+      qualityLossless: "Lossless",
     },
     status: {
       modelsAria: "Models status",
@@ -134,7 +142,8 @@ export const ui = {
       exporting: "Exporting video",
       close: "Close",
       preparing: "Preparing\u2026",
-      hint: "The video will play once to record the subtitles.",
+      hint:
+        "Fast export is used when available. Compatibility mode may play the video once.",
     },
     client: {
       downloads: {
@@ -192,6 +201,7 @@ export const ui = {
       ready: "Ready \u00B7 {n} lines \u00B7 {count} language(s).",
       generatedIn: "Generated in {time}",
       videoLoaded: "Video loaded.",
+      transcriptionReady: "Transcription ready. Choose options and generate.",
       translationFailed: "Translation failed.",
       translatingTo: "Translating to {lang}\u2026",
       segCount: "{n} lines",
@@ -211,7 +221,8 @@ export const ui = {
         exporting: "Exporting video",
         preparing: "Preparing\u2026",
         preparingEncoder: "Preparing the encoder\u2026",
-        renderingLocally: "Rendering the video with subtitles locally\u2026",
+        renderingLocally:
+          "Rendering the video with subtitles locally\u2026",
         renderingVideo: "Rendering video with subtitles\u2026",
         saving: "Saving the file\u2026",
         exported: "Video exported! Check your downloads.",
@@ -219,18 +230,36 @@ export const ui = {
         failed: "Export failed",
         generatingFile: "Generating the file\u2026",
         preparingVideo: "Preparing the video\u2026",
-        recordingAudio: "Recording video with subtitles\u2026",
-        recordingNoAudio: "Recording video with subtitles (no audio)\u2026",
+        recordingAudio:
+          "Compatibility mode: recording video with subtitles\u2026",
+        recordingNoAudio:
+          "Compatibility mode: recording video with subtitles (no audio)\u2026",
         keepTabActive:
-          "Keep this tab active: the video plays once to be recorded.",
+          "Keep this tab active: compatibility mode plays the video once.",
+        webcodecsFallbackNotice:
+          "Using compatibility mode for this export.",
       },
       exportErrors: {
+        diagnosticUnavailable: "not reported",
         noSupport:
           "Your browser doesn't support client-side video export. Try desktop Chrome or Edge.",
+        noSupportAfterFallback:
+          "This browser cannot export the video locally. Try desktop Chrome or Edge.",
+        webcodecsMissingApis: "WebCodecs unavailable: missing {apis}.",
+        webcodecsMissingFile:
+          "WebCodecs unavailable: the original video file is missing.",
+        mediabunnyLoadFailed:
+          "The WebCodecs helper failed to load: {error}.",
+        webcodecsInitFailed:
+          "WebCodecs conversion could not start: {error}.",
+        webcodecsInvalid:
+          "WebCodecs conversion was invalid. Discarded tracks: {tracks}.",
+        formatNotSupported:
+          "This browser cannot export {format} in compatibility mode. Try the other format or use desktop Chrome/Edge.",
         recordStart: "Couldn't start the video recording.",
         playbackBlocked:
           "The browser blocked the playback needed to record. Please try again.",
-        webcodecsFailed: "WebCodecs export failed: {error}. Try again.",
+        webcodecsFailed: "WebCodecs export failed: {error}.",
       },
       videoExported: "Video exported.",
       langNames: {
@@ -309,7 +338,7 @@ export const ui = {
         "Mantén el texto original detectado junto a los subtítulos traducidos.",
       wordAnimation: "Animar por palabra",
       wordAnimationHint:
-        "Timing más preciso estilo karaoke, pero Whisper tarda más.",
+        "Resalta cada palabra mientras se reproduce el vídeo.",
       generate: "Generar subtítulos",
       preparing: "Preparando\u2026",
     },
@@ -321,6 +350,14 @@ export const ui = {
       redoTitle: "Rehacer (Ctrl/Cmd+Shift+Z)",
       downloadSrt: "Descargar subtítulos (.srt)",
       downloadVideo: "Descargar vídeo",
+      videoExportOptions: "Opciones de exportación de vídeo",
+      videoFormat: "Formato",
+      formatMp4: "MP4",
+      formatWebm: "WebM",
+      videoQuality: "Calidad",
+      qualityOptimized: "Optimizado",
+      qualityHigh: "Alta",
+      qualityLossless: "Sin pérdida",
     },
     status: {
       modelsAria: "Estado de los modelos",
@@ -381,7 +418,8 @@ export const ui = {
       exporting: "Exportando vídeo",
       close: "Cerrar",
       preparing: "Preparando\u2026",
-      hint: "El vídeo se reproducirá una vez para grabar los subtítulos.",
+      hint:
+        "Se usará la exportación rápida cuando esté disponible. El modo compatibilidad puede reproducir el vídeo una vez.",
     },
     client: {
       downloads: {
@@ -440,6 +478,7 @@ export const ui = {
       ready: "Listo \u00B7 {n} líneas \u00B7 {count} idioma(s).",
       generatedIn: "Generado en {time}",
       videoLoaded: "Vídeo cargado.",
+      transcriptionReady: "Transcripción lista. Elige opciones y genera.",
       translationFailed: "Error de traducción.",
       translatingTo: "Traduciendo a {lang}\u2026",
       segCount: "{n} líneas",
@@ -459,7 +498,8 @@ export const ui = {
         exporting: "Exportando vídeo",
         preparing: "Preparando\u2026",
         preparingEncoder: "Preparando el codificador\u2026",
-        renderingLocally: "Renderizando el vídeo con subtítulos en local\u2026",
+        renderingLocally:
+          "Renderizando el vídeo con subtítulos en local\u2026",
         renderingVideo: "Renderizando el vídeo con subtítulos\u2026",
         saving: "Guardando el archivo\u2026",
         exported: "¡Vídeo exportado! Revisa tus descargas.",
@@ -467,19 +507,37 @@ export const ui = {
         failed: "Error en la exportación",
         generatingFile: "Generando el archivo\u2026",
         preparingVideo: "Preparando el vídeo\u2026",
-        recordingAudio: "Grabando el vídeo con subtítulos\u2026",
-        recordingNoAudio: "Grabando el vídeo con subtítulos (sin audio)\u2026",
+        recordingAudio:
+          "Modo compatibilidad: grabando el vídeo con subtítulos\u2026",
+        recordingNoAudio:
+          "Modo compatibilidad: grabando el vídeo con subtítulos (sin audio)\u2026",
         keepTabActive:
-          "Mantén esta pestaña activa: el vídeo se reproduce una vez para grabarse.",
+          "Mantén esta pestaña activa: el modo compatibilidad reproduce el vídeo una vez.",
+        webcodecsFallbackNotice:
+          "Usando el modo compatibilidad para esta exportación.",
       },
       exportErrors: {
+        diagnosticUnavailable: "sin información",
         noSupport:
           "Tu navegador no admite la exportación de vídeo en local. Prueba con Chrome o Edge en ordenador.",
+        noSupportAfterFallback:
+          "Este navegador no puede exportar el vídeo en local. Prueba con Chrome o Edge en ordenador.",
+        webcodecsMissingApis: "WebCodecs no disponible: falta {apis}.",
+        webcodecsMissingFile:
+          "WebCodecs no disponible: falta el archivo de vídeo original.",
+        mediabunnyLoadFailed:
+          "No se pudo cargar el helper de WebCodecs: {error}.",
+        webcodecsInitFailed:
+          "No se pudo iniciar la conversión con WebCodecs: {error}.",
+        webcodecsInvalid:
+          "La conversión con WebCodecs no es válida. Pistas descartadas: {tracks}.",
+        formatNotSupported:
+          "Este navegador no puede exportar {format} en modo compatibilidad. Prueba el otro formato o usa Chrome/Edge de escritorio.",
         recordStart: "No se pudo iniciar la grabación del vídeo.",
         playbackBlocked:
           "El navegador bloqueó la reproducción necesaria para grabar. Inténtalo de nuevo.",
         webcodecsFailed:
-          "Error en la exportación con WebCodecs: {error}. Inténtalo de nuevo.",
+          "Error en la exportación con WebCodecs: {error}.",
       },
       videoExported: "Vídeo exportado.",
       langNames: {

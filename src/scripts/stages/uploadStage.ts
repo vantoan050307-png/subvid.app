@@ -18,6 +18,8 @@ type UploadStageOptions = {
   renderSegments: () => void
   enableExports: (on: boolean) => void
   resetHistory: () => void
+  startEarlyTranscription: (file: File) => void
+  resetTranscriptionCache: () => void
 }
 
 function isVideoFile(file: File) {
@@ -43,6 +45,8 @@ export function createUploadStageController({
   renderSegments,
   enableExports,
   resetHistory,
+  startEarlyTranscription,
+  resetTranscriptionCache,
 }: UploadStageOptions) {
   let dragDepth = 0
   let unsupportedTimer: number | undefined
@@ -127,6 +131,7 @@ export function createUploadStageController({
     }
 
     resetDropzoneState()
+    resetTranscriptionCache()
 
     const previousUrl = getVideoObjectUrl()
     if (previousUrl) URL.revokeObjectURL(previousUrl)
@@ -163,6 +168,7 @@ export function createUploadStageController({
     ui.configError.hidden = true
     ui.configError.textContent = ""
     setStage("config")
+    startEarlyTranscription(file)
   }
 
   function resetFlow() {
@@ -175,6 +181,7 @@ export function createUploadStageController({
     }
 
     setSelectedVideoFile(null)
+    resetTranscriptionCache()
     resetEditorState()
     ui.langTabs.innerHTML = ""
     ui.generationTime.hidden = true

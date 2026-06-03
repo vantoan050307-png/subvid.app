@@ -358,6 +358,9 @@ const uploadStageController = createUploadStageController({
   renderSegments,
   enableExports,
   resetHistory,
+  startEarlyTranscription: (file) =>
+    configStageController.startEarlyTranscription(file),
+  resetTranscriptionCache: () => configStageController.resetTranscriptionCache(),
 })
 
 const { downloadVideo } = createVideoExporter({

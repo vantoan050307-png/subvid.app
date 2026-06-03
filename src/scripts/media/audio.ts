@@ -24,9 +24,21 @@ type AudioServiceOptions = {
 
 export function createAudioService(options: AudioServiceOptions) {
   let ffmpeg: any = null
+  let ffmpegLoading: Promise<any> | null = null
 
   async function ensureFfmpeg() {
     if (ffmpeg) return ffmpeg
+    if (ffmpegLoading) return ffmpegLoading
+    ffmpegLoading = loadFfmpeg()
+    try {
+      ffmpeg = await ffmpegLoading
+      return ffmpeg
+    } finally {
+      ffmpegLoading = null
+    }
+  }
+
+  async function loadFfmpeg() {
     options.updateDownloadStatus("ffmpeg", "downloading")
     const coreBase = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm"
     const coreURL = `${coreBase}/ffmpeg-core.js`
@@ -42,8 +54,8 @@ export function createAudioService(options: AudioServiceOptions) {
     const classWorkerURL = ffmpegWorkerURL
     console.info("[ffmpeg] class worker url:", classWorkerURL)
 
-    ffmpeg = new FFmpeg()
-    ffmpeg.on("log", ({ type, message }: any) => {
+    const instance = new FFmpeg()
+    instance.on("log", ({ type, message }: any) => {
       console.info(`[ffmpeg:${type}] ${message}`)
     })
 
@@ -57,7 +69,7 @@ export function createAudioService(options: AudioServiceOptions) {
       )
     }, 3000)
     try {
-      await ffmpeg.load({ classWorkerURL, coreURL, wasmURL })
+      await instance.load({ classWorkerURL, coreURL, wasmURL })
       console.info(
         `[ffmpeg] load() resolved in ${Math.round(performance.now() - t0)}ms`,
       )
@@ -68,7 +80,7 @@ export function createAudioService(options: AudioServiceOptions) {
       clearInterval(watchdog)
     }
     options.updateDownloadStatus("ffmpeg", "ready")
-    return ffmpeg
+    return instance
   }
 
   async function decodeWavPcm16(

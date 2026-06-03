@@ -4,7 +4,8 @@
 //
 // Protocol (main ⇄ worker):
 //   → { id, type: "ensure-asr", payload: { model, webgpu } }
-//   → { id, type: "transcribe", payload: { audio, language } }   // audio buffer transferred
+//   → { id, type: "transcribe", payload: { audio, language, wordTimestamps } }
+//                                                             // audio buffer transferred
 //   ← { type: "progress", key, payload }   // streamed model-download progress
 //   ← { type: "chunk" }                     // streamed per-chunk ASR progress
 //   ← { id, type: "done", result? }         // request finished

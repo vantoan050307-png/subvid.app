@@ -21,6 +21,41 @@ type GeneratedState = {
   dualTrackLangs: string[]
 }
 
+type AudioJobResult = {
+  audio: Float32Array
+  audioSeconds: number
+}
+
+type AudioJob = {
+  key: string
+  promise: Promise<AudioJobResult>
+  result?: AudioJobResult
+  error?: unknown
+}
+
+type TranscriptionRequest = {
+  file: File
+  language: string
+  wordTimestamps: boolean
+}
+
+type TranscriptionJobResult = {
+  output: any
+  audio: Float32Array
+  audioSeconds: number
+  chunksDone: number
+}
+
+type TranscriptionJob = {
+  key: string
+  fileKey: string
+  request: TranscriptionRequest
+  promise: Promise<TranscriptionJobResult>
+  result?: TranscriptionJobResult
+  error?: unknown
+  settled: boolean
+}
+
 type ConfigStageOptions = {
   ui: typeof appUi
   tt: (path: string, vars?: Record<string, unknown>) => string
@@ -70,8 +105,15 @@ export function createConfigStageController({
   setStage,
 }: ConfigStageOptions) {
   let asrReady = false
+  let asrReadyPromise: Promise<void> | null = null
   let progressRaf = 0
   let progressIndeterminate = false
+  let activeFileKey = ""
+  let audioJob: AudioJob | null = null
+  let audioProgressJobKey: string | null = null
+  let progressOwnerKey: string | null = null
+  let transcriptionQueue = Promise.resolve()
+  const transcriptionJobs = new Map<string, TranscriptionJob>()
 
   function setStatus(message: string, kind = "ok") {
     ui.configStatus.textContent = message
@@ -117,16 +159,64 @@ export function createConfigStageController({
     progressRaf = requestAnimationFrame(tick)
   }
 
+  function fileKey(file: File) {
+    return [file.name, file.size, file.lastModified, file.type || "video"].join(":")
+  }
+
+  function selectedFileKey() {
+    const file = selectedVideoFile()
+    return file ? fileKey(file) : ""
+  }
+
+  function ensureFileSession(file: File) {
+    const key = fileKey(file)
+    if (activeFileKey !== key) {
+      resetTranscriptionCache()
+      activeFileKey = key
+    }
+    return key
+  }
+
+  function transcriptionKey(request: TranscriptionRequest) {
+    const language = request.language || "auto"
+    const detail = request.wordTimestamps ? "words" : "segments"
+    return `${fileKey(request.file)}:${language}:${detail}`
+  }
+
+  function canUpdateJobProgress(jobKey: string | null) {
+    return !!jobKey && jobKey === progressOwnerKey && activeFileKey === selectedFileKey()
+  }
+
+  function withAudioProgress(jobKey: string, run: () => Promise<AudioJobResult>) {
+    audioProgressJobKey = jobKey
+    return run().finally(() => {
+      if (audioProgressJobKey === jobKey) audioProgressJobKey = null
+    })
+  }
+
   const { ensureFfmpeg, extractAudioBuffer } = createAudioService({
     tt,
     fetchWithProgress,
     updateDownloadStatus,
-    setStatus,
-    setProgress,
-    applyProgress,
-    setIndeterminate,
-    startProgressCreep,
-    stopProgressCreep,
+    setStatus: (message, kind) => {
+      if (canUpdateJobProgress(audioProgressJobKey)) setStatus(message, kind)
+    },
+    setProgress: (percent) => {
+      if (canUpdateJobProgress(audioProgressJobKey)) setProgress(percent)
+    },
+    applyProgress: (percent) => {
+      if (canUpdateJobProgress(audioProgressJobKey)) applyProgress(percent)
+    },
+    setIndeterminate: (on) => {
+      if (canUpdateJobProgress(audioProgressJobKey)) setIndeterminate(on)
+    },
+    startProgressCreep: (from, ceiling, expected) => {
+      if (canUpdateJobProgress(audioProgressJobKey))
+        startProgressCreep(from, ceiling, expected)
+    },
+    stopProgressCreep: () => {
+      if (canUpdateJobProgress(audioProgressJobKey)) stopProgressCreep()
+    },
   })
 
   function logGeneration(event: string, details: Record<string, unknown> = {}) {
@@ -163,13 +253,20 @@ export function createConfigStageController({
 
   async function ensureRecognizer() {
     if (asrReady) return
-    updateDownloadStatus("asr", "downloading")
-    await transformersClient.call("ensure-asr", {
-      model: ASR_MODEL,
-      webgpu: hasWebGPU,
-    })
-    asrReady = true
-    updateDownloadStatus("asr", "ready")
+    if (!asrReadyPromise) {
+      asrReadyPromise = (async () => {
+        updateDownloadStatus("asr", "downloading")
+        await transformersClient.call("ensure-asr", {
+          model: ASR_MODEL,
+          webgpu: hasWebGPU,
+        })
+        asrReady = true
+        updateDownloadStatus("asr", "ready")
+      })().finally(() => {
+        asrReadyPromise = null
+      })
+    }
+    await asrReadyPromise
   }
 
   async function preloadAssetsInBackground() {
@@ -185,6 +282,241 @@ export function createConfigStageController({
     ])
   }
 
+  function requestFromCurrentOptions(file: File): TranscriptionRequest {
+    return {
+      file,
+      language: ui.inputLang.value || "",
+      wordTimestamps: true,
+    }
+  }
+
+  function takeProgressOwnership(job: TranscriptionJob) {
+    progressOwnerKey = job.key
+    ui.configProgress.hidden = false
+    setIndeterminate(false)
+  }
+
+  function getAudioJob(file: File, jobKey: string) {
+    const key = fileKey(file)
+    if (audioJob?.key === key && !audioJob.error) return audioJob
+
+    const job: AudioJob = {
+      key,
+      promise: withAudioProgress(jobKey, async () => {
+        const extractStartedAt = performance.now()
+        const audio = await extractAudioBuffer(file)
+        const audioSeconds = audio.length / 16000
+        logGeneration("audio:ready", {
+          audioSeconds: Math.round(audioSeconds),
+          samples: audio.length,
+          elapsedMs: Math.round(performance.now() - extractStartedAt),
+        })
+        return { audio, audioSeconds }
+      }),
+    }
+
+    job.promise.then(
+      (result) => {
+        job.result = result
+      },
+      (error) => {
+        job.error = error
+      },
+    )
+    audioJob = job
+    return job
+  }
+
+  async function runTranscriptionJob(
+    job: TranscriptionJob,
+  ): Promise<TranscriptionJobResult> {
+    const { file, language, wordTimestamps } = job.request
+    const { audio, audioSeconds } = await getAudioJob(file, job.key).promise
+
+    if (canUpdateJobProgress(job.key)) {
+      setStatus(tt("steps.loadingSpeech"), "busy")
+      startProgressCreep(38, 48, 8000)
+    }
+
+    const asrMonitor = setInterval(() => {
+      if (!canUpdateJobProgress(job.key)) return
+      const download = downloads.asr
+      if (download.state === "downloading" && download.total) {
+        stopProgressCreep()
+        const ratio = Math.min(1, download.progress / 100)
+        applyProgress(38 + ratio * 10)
+        const meta =
+          prettifyBytes(download.loaded) + " / " + prettifyBytes(download.total)
+        setStatus(`Step 4/5 · Downloading speech model… ${meta}`, "busy")
+      }
+    }, 200)
+
+    try {
+      const recognizerStartedAt = performance.now()
+      const cached = asrReady
+      logGeneration("recognizer:start", { cached })
+      await ensureRecognizer()
+      logGeneration("recognizer:ready", {
+        cached,
+        elapsedMs: Math.round(performance.now() - recognizerStartedAt),
+      })
+    } finally {
+      clearInterval(asrMonitor)
+      if (canUpdateJobProgress(job.key)) {
+        stopProgressCreep()
+        setProgress(48)
+      }
+    }
+
+    const TR_START = 48
+    const TR_END = 90
+    const chunkSeconds = 30 - 2 * 5
+    const totalChunks = Math.max(1, Math.ceil(audioSeconds / chunkSeconds))
+    const chunkSpan = (TR_END - TR_START) / totalChunks
+    let chunksDone = 0
+    let lastChunkAt = performance.now()
+    let perChunkMs = Math.max(2000, (audioSeconds / totalChunks) * 900)
+
+    const transcribeStatus = () => {
+      setStatus(tt("steps.transcribing"), "busy")
+    }
+
+    if (canUpdateJobProgress(job.key)) {
+      transcribeStatus()
+      applyProgress(TR_START)
+      startProgressCreep(TR_START, TR_START + chunkSpan, perChunkMs)
+    }
+
+    const transcribeStartedAt = performance.now()
+    logGeneration("transcription:start", {
+      audioSeconds: Math.round(audioSeconds),
+      estimatedChunks: totalChunks,
+      language: language || "auto",
+      wordTimestamps,
+    })
+
+    transformersClient.setChunkHandler(() => {
+      const now = performance.now()
+      perChunkMs = Math.max(500, now - lastChunkAt)
+      lastChunkAt = now
+      chunksDone = Math.min(totalChunks, chunksDone + 1)
+      const floor = Math.min(TR_END, TR_START + chunksDone * chunkSpan)
+      const ceiling = Math.min(TR_END, floor + chunkSpan)
+
+      if (canUpdateJobProgress(job.key)) {
+        transcribeStatus()
+        stopProgressCreep()
+        applyProgress(floor)
+        if (chunksDone < totalChunks)
+          startProgressCreep(floor, ceiling, perChunkMs)
+      }
+
+      logGeneration("transcription:chunk", {
+        chunk: chunksDone,
+        estimatedChunks: totalChunks,
+        elapsedMs: Math.round(now - transcribeStartedAt),
+      })
+    })
+
+    try {
+      const audioForWorker = audio.slice()
+      const output = await transformersClient.call(
+        "transcribe",
+        {
+          audio: audioForWorker,
+          language: language || null,
+          wordTimestamps,
+        },
+        [audioForWorker.buffer],
+      )
+      logGeneration("transcription:done", {
+        chunks: chunksDone,
+        elapsedMs: Math.round(performance.now() - transcribeStartedAt),
+      })
+      if (canUpdateJobProgress(job.key)) {
+        stopProgressCreep()
+        setProgress(TR_END)
+      }
+      return { output, audio, audioSeconds, chunksDone }
+    } finally {
+      transformersClient.setChunkHandler(null)
+    }
+  }
+
+  function getOrCreateTranscriptionJob(request: TranscriptionRequest) {
+    const fileKeyValue = ensureFileSession(request.file)
+    const key = transcriptionKey(request)
+    const existing = transcriptionJobs.get(key)
+    if (existing && !existing.error) return existing
+    if (existing?.error) transcriptionJobs.delete(key)
+
+    const job = {
+      key,
+      fileKey: fileKeyValue,
+      request,
+      settled: false,
+    } as TranscriptionJob
+
+    job.promise = transcriptionQueue
+      .then(() => runTranscriptionJob(job))
+      .then(
+        (result) => {
+          job.result = result
+          return result
+        },
+        (error) => {
+          job.error = error
+          throw error
+        },
+      )
+      .finally(() => {
+        job.settled = true
+      })
+
+    transcriptionQueue = job.promise.catch(() => {})
+    transcriptionJobs.set(key, job)
+    return job
+  }
+
+  function resetTranscriptionCache() {
+    activeFileKey = ""
+    audioJob = null
+    audioProgressJobKey = null
+    progressOwnerKey = null
+    transcriptionJobs.clear()
+    transformersClient.setChunkHandler(null)
+    stopProgressCreep()
+    setIndeterminate(false)
+  }
+
+  function startEarlyTranscription(file = selectedVideoFile()) {
+    if (!file || isExporting()) return
+    ensureFileSession(file)
+    const job = getOrCreateTranscriptionJob({
+      file,
+      language: "",
+      wordTimestamps: true,
+    })
+    takeProgressOwnership(job)
+    if (!job.result) {
+      setStatus(tt("steps.preparing"), "busy")
+      setProgress(2)
+    }
+    job.promise
+      .then(() => {
+        if (!canUpdateJobProgress(job.key)) return
+        setStatus(tt("transcriptionReady"), "ok")
+        ui.configProgress.hidden = true
+      })
+      .catch((error) => {
+        console.warn("[generate] early transcription failed", error)
+        if (!canUpdateJobProgress(job.key)) return
+        setStatus(tt("videoLoaded"), "ok")
+        setProgress(0)
+        ui.configProgress.hidden = true
+      })
+  }
+
   async function generate() {
     const file = selectedVideoFile()
     if (!file || isExporting()) return
@@ -196,9 +528,15 @@ export function createConfigStageController({
     ui.configError.textContent = ""
     ui.generationTime.hidden = true
     ui.generationTime.textContent = ""
-    ui.configProgress.hidden = false
-    setStatus(tt("steps.preparing"), "busy")
-    setProgress(2)
+    const request = requestFromCurrentOptions(file)
+    const job = getOrCreateTranscriptionJob(request)
+    const hadVisibleProgress =
+      progressOwnerKey === job.key && !ui.configProgress.hidden
+    takeProgressOwnership(job)
+    if (!job.result && !hadVisibleProgress) {
+      setStatus(tt("steps.preparing"), "busy")
+      setProgress(2)
+    }
     const generationStartedAt = performance.now()
     logGeneration("start", {
       fileSize: file.size,
@@ -210,109 +548,22 @@ export function createConfigStageController({
     })
 
     try {
-      const extractStartedAt = performance.now()
-      const audio = await extractAudioBuffer(file)
-      const audioSeconds = audio.length / 16000
-      logGeneration("audio:ready", {
-        audioSeconds: Math.round(audioSeconds),
-        samples: audio.length,
-        elapsedMs: Math.round(performance.now() - extractStartedAt),
-        totalElapsedMs: Math.round(performance.now() - generationStartedAt),
-      })
-      setStatus(tt("steps.loadingSpeech"), "busy")
-      startProgressCreep(38, 48, 8000)
-
-      const asrMonitor = setInterval(() => {
-        const download = downloads.asr
-        if (download.state === "downloading" && download.total) {
-          stopProgressCreep()
-          const ratio = Math.min(1, download.progress / 100)
-          applyProgress(38 + ratio * 10)
-          const meta =
-            prettifyBytes(download.loaded) + " / " + prettifyBytes(download.total)
-          setStatus(`Step 4/5 · Downloading speech model… ${meta}`, "busy")
-        }
-      }, 200)
-
-      try {
-        const recognizerStartedAt = performance.now()
-        logGeneration("recognizer:start", { cached: asrReady })
-        await ensureRecognizer()
-        logGeneration("recognizer:ready", {
-          cached: asrReady,
-          elapsedMs: Math.round(performance.now() - recognizerStartedAt),
-          totalElapsedMs: Math.round(performance.now() - generationStartedAt),
+      const reusedTranscription = !!job.result
+      if (reusedTranscription) {
+        logGeneration("transcription:cache-hit", {
+          language: request.language || "auto",
+          wordTimestamps: request.wordTimestamps,
         })
-      } finally {
-        clearInterval(asrMonitor)
-        stopProgressCreep()
       }
-      setProgress(48)
-
-      const TR_START = 48
-      const TR_END = 90
-      const chunkSeconds = 30 - 2 * 5
-      const totalChunks = Math.max(1, Math.ceil(audioSeconds / chunkSeconds))
-      const chunkSpan = (TR_END - TR_START) / totalChunks
-      let chunksDone = 0
-      let lastChunkAt = performance.now()
-      let perChunkMs = Math.max(2000, (audioSeconds / totalChunks) * 900)
-
-      const transcribeStatus = () => {
-        setStatus(tt("steps.transcribing"), "busy")
-      }
-
-      transcribeStatus()
-      applyProgress(TR_START)
-      startProgressCreep(TR_START, TR_START + chunkSpan, perChunkMs)
-      const transcribeStartedAt = performance.now()
-      logGeneration("transcription:start", {
-        audioSeconds: Math.round(audioSeconds),
-        estimatedChunks: totalChunks,
-        language: ui.inputLang.value || "auto",
-      })
-
-      transformersClient.setChunkHandler(() => {
-        const now = performance.now()
-        perChunkMs = Math.max(500, now - lastChunkAt)
-        lastChunkAt = now
-        chunksDone = Math.min(totalChunks, chunksDone + 1)
-        const floor = Math.min(TR_END, TR_START + chunksDone * chunkSpan)
-        const ceiling = Math.min(TR_END, floor + chunkSpan)
-        transcribeStatus()
-        stopProgressCreep()
-        applyProgress(floor)
-        if (chunksDone < totalChunks)
-          startProgressCreep(floor, ceiling, perChunkMs)
-        logGeneration("transcription:chunk", {
-          chunk: chunksDone,
-          estimatedChunks: totalChunks,
-          elapsedMs: Math.round(now - transcribeStartedAt),
-        })
-      })
-
-      let output: any
-      try {
-        output = await transformersClient.call(
-          "transcribe",
-          {
-            audio,
-            language: ui.inputLang.value || null,
-            wordTimestamps: ui.wordAnimation.checked,
-          },
-          [audio.buffer],
-        )
-      } finally {
-        transformersClient.setChunkHandler(null)
-      }
-      logGeneration("transcription:done", {
+      const { output, audio, chunksDone } = await job.promise
+      logGeneration("transcription:available", {
+        cached: reusedTranscription,
         chunks: chunksDone,
-        elapsedMs: Math.round(performance.now() - transcribeStartedAt),
         totalElapsedMs: Math.round(performance.now() - generationStartedAt),
       })
 
       stopProgressCreep()
-      setProgress(TR_END)
+      setProgress(90)
       setStatus(tt("steps.buildingLines"), "busy")
       applyProgress(92)
 
@@ -321,7 +572,10 @@ export function createConfigStageController({
         normalizeLanguageCode(output?.language) ||
         normalizeLanguageCode(ui.inputLang.value) ||
         "en"
-      const baseSegments = normalizeSegments(output)
+      const baseSegments = normalizeSegments(output, {
+        audio,
+        sampleRate: 16_000,
+      })
       logGeneration("segments:ready", {
         detectedLang,
         segments: baseSegments.length,
@@ -443,6 +697,8 @@ export function createConfigStageController({
     stopProgressCreep,
     ensureRecognizer,
     preloadAssetsInBackground,
+    startEarlyTranscription,
+    resetTranscriptionCache,
     generate,
     wireConfigStage,
   }
